@@ -1,0 +1,28 @@
+test_authentication_missing_forged_and_malformed_credentials (test_identity.IdentityHTTPTests.test_authentication_missing_forged_and_malformed_credentials) ... ok
+test_body_limits_content_type_and_transfer_encoding (test_identity.IdentityHTTPTests.test_body_limits_content_type_and_transfer_encoding) ... ok
+test_close_before_delayed_enable_creates_persistent_version_barrier (test_identity.IdentityHTTPTests.test_close_before_delayed_enable_creates_persistent_version_barrier) ... ok
+test_concurrent_consent_changes_are_serialized (test_identity.IdentityHTTPTests.test_concurrent_consent_changes_are_serialized) ... ok
+test_consent_cannot_target_another_user_or_coerce_types (test_identity.IdentityHTTPTests.test_consent_cannot_target_another_user_or_coerce_types) ... ok
+test_consent_explicit_versioned_and_revoke_resists_old_enable (test_identity.IdentityHTTPTests.test_consent_explicit_versioned_and_revoke_resists_old_enable) ... ok
+test_credentials_are_hashed_in_database_and_not_logged (test_identity.IdentityHTTPTests.test_credentials_are_hashed_in_database_and_not_logged) ... ok
+test_health_has_authoritative_rule_and_date (test_identity.IdentityHTTPTests.test_health_has_authoritative_rule_and_date) ... ok
+test_invalid_json_and_unknown_fields_are_rejected (test_identity.IdentityHTTPTests.test_invalid_json_and_unknown_fields_are_rejected) ... ok
+test_missing_and_duplicate_content_lengths (test_identity.IdentityHTTPTests.test_missing_and_duplicate_content_lengths) ... ok
+test_nickname_rules_and_atomic_validation (test_identity.IdentityHTTPTests.test_nickname_rules_and_atomic_validation) ... ok
+test_nickname_updates_only_authenticated_identity (test_identity.IdentityHTTPTests.test_nickname_updates_only_authenticated_identity) ... ok
+test_no_query_identity_and_errors_are_json (test_identity.IdentityHTTPTests.test_no_query_identity_and_errors_are_json) ... ok
+test_registration_and_two_independent_profiles (test_identity.IdentityHTTPTests.test_registration_and_two_independent_profiles) ... ok
+test_restart_preserves_auth_nickname_and_revoked_consent (test_identity.IdentityHTTPTests.test_restart_preserves_auth_nickname_and_revoked_consent) ... ok
+test_storage_failure_is_service_unavailable_without_details (test_identity.IdentityHTTPTests.test_storage_failure_is_service_unavailable_without_details) ... ok
+test_unauthenticated_writes_do_not_change_identity_or_consent (test_identity.IdentityHTTPTests.test_unauthenticated_writes_do_not_change_identity_or_consent) ... ok
+test_floor_and_remaining_boundaries (test_identity.RulesTests.test_floor_and_remaining_boundaries) ... ok
+test_invalid_step_types_and_bounds (test_identity.RulesTests.test_invalid_step_types_and_bounds) ... ok
+test_naive_test_clock_is_rejected (test_identity.RulesTests.test_naive_test_clock_is_rejected) ... ok
+test_shanghai_midnight_and_year_boundary (test_identity.RulesTests.test_shanghai_midnight_and_year_boundary) ... ok
+test_sourced_custom_config_starts_real_server_on_temporary_port_and_database (test_launcher.LauncherTests.test_sourced_custom_config_starts_real_server_on_temporary_port_and_database) ... ok
+test_sourcing_example_exports_all_settings_to_child (test_launcher.LauncherTests.test_sourcing_example_exports_all_settings_to_child) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.597s
+
+OK
