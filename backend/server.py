@@ -8,9 +8,9 @@ import re
 import socket
 import sqlite3
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
-from .domain import APIError, MAX_BODY_BYTES, day_context, exact_fields, utc_now
+from .domain import APIError, MAX_BODY_BYTES, day_context, exact_fields, page_size, utc_now
 from .storage import Store
 
 
@@ -33,9 +33,21 @@ class Application:
         # Injectable only in-process for tests, never through HTTP or CLI.
         self.clock = clock
 
-    def dispatch(self, method, path, authorization, body):
+    def dispatch(self, method, path, authorization, body, query=""):
         now = self.clock()
         context = day_context(now)
+        try:
+            pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True, max_num_fields=10)
+        except ValueError:
+            raise APIError(400, "invalid_query", "查询参数无效") from None
+        params = dict(pairs)
+        allowed = {"/v1/leaderboard": {"limit", "cursor"},
+                   "/v1/leaderboard/me": {"limit", "snapshot"},
+                   "/v1/circles/current": {"limit", "snapshot"},
+                   "/v1/circles/current/members": {"limit", "cursor", "snapshot"},
+                   "/v1/circles/current/me": {"limit", "snapshot"}}.get(path, set())
+        if len(params) != len(pairs) or not set(params) <= allowed:
+            raise APIError(400, "invalid_query", "查询参数不符合接口定义")
         if method == "GET" and path == "/health":
             return 200, {"status": "ok", **context}
         if method == "POST" and path == "/v1/users":
@@ -50,7 +62,44 @@ class Application:
             exact_fields(body, ["enabled", "expected_revision"])
             user = self.store.sharing(authorization, body["enabled"], body["expected_revision"])
             return 200, {"user": user, **context}
-        if path in ("/health", "/v1/users", "/v1/me", "/v1/me/sharing"):
+        if method == "PUT" and path == "/v1/me/steps":
+            exact_fields(body, ["date", "steps", "expected_revision"])
+            return 200, self.store.sync_steps(authorization, body["date"], body["steps"],
+                                               body["expected_revision"], self.clock)
+        if method == "GET" and path == "/v1/me/steps":
+            return 200, self.store.today_steps(authorization, self.clock)
+        if method == "DELETE" and path in ("/v1/me/steps", "/v1/me"):
+            exact_fields(body, ["expected_revision"])
+            operation = self.store.delete_steps if path.endswith("/steps") else self.store.delete_account
+            return 200, {**operation(authorization, body["expected_revision"]),
+                         **day_context(self.clock())}
+        if method == "GET" and path in ("/v1/leaderboard", "/v1/leaderboard/me"):
+            limit = page_size(params.get("limit"))
+            snapshot = params.get("snapshot")
+            if snapshot is not None and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{1,19}", snapshot):
+                raise APIError(422, "invalid_snapshot", "排行榜版本无效")
+            return 200, self.store.leaderboard(authorization, limit, params.get("cursor"), self.clock,
+                                                locate=path.endswith("/me"), snapshot=snapshot)
+        if path == "/v1/me/circle-participation" and method in ("GET", "PUT"):
+            if method == "PUT":
+                exact_fields(body, ["enabled", "expected_revision"])
+                result = self.store.circle_participation(authorization, body["enabled"],
+                                                         body["expected_revision"], update=True)
+            else:
+                result = self.store.circle_participation(authorization)
+            return 200, {**result, **day_context(self.clock())}
+        if method == "GET" and path in ("/v1/circles/current", "/v1/circles/current/members",
+                                         "/v1/circles/current/me"):
+            limit = page_size(params.get("limit"))
+            snapshot = params.get("snapshot")
+            if snapshot is not None and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{1,19}", snapshot):
+                raise APIError(422, "invalid_snapshot", "圈子版本无效")
+            mode = "members" if path.endswith("/members") else "locate" if path.endswith("/me") else "summary"
+            return 200, self.store.current_circle(authorization, limit, params.get("cursor"),
+                                                  self.clock, mode, snapshot)
+        if path in ("/health", "/v1/users", "/v1/me", "/v1/me/sharing", "/v1/me/steps",
+                    "/v1/leaderboard", "/v1/leaderboard/me", "/v1/me/circle-participation",
+                    "/v1/circles/current", "/v1/circles/current/members", "/v1/circles/current/me"):
             raise APIError(405, "method_not_allowed", "此接口不支持该方法")
         raise APIError(404, "not_found", "接口不存在")
 
@@ -126,13 +175,13 @@ class Handler(BaseHTTPRequestHandler):
             if len(self.path) > 2048:
                 raise APIError(414, "uri_too_long", "请求路径过长")
             target = urlsplit(self.path)
-            if target.scheme or target.netloc or target.fragment or target.query:
-                raise APIError(400, "invalid_query", "此接口不接受查询参数")
-            body = self.read_json() if self.command in ("POST", "PUT", "PATCH") else {}
+            if target.scheme or target.netloc or target.fragment:
+                raise APIError(400, "invalid_query", "请求路径无效")
+            body = self.read_json() if self.command in ("POST", "PUT", "PATCH", "DELETE") else {}
             auth_headers = self.headers.get_all("Authorization", [])
             authorization = auth_headers[0] if len(auth_headers) == 1 else None
             status, payload = self.server.application.dispatch(
-                self.command, target.path, authorization, body
+                self.command, target.path, authorization, body, target.query
             )
             self.reply(status, payload)
         except APIError as error:
