@@ -22,10 +22,6 @@
 		36068B7EB00D7189460A1F84 = { isa = PBXBuildFile; fileRef = 5162DBCADBC841078D0E7368; };
 		E052F81B609789631DAE1DD5 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ClimbingCheckInView.swift"; sourceTree = "<group>"; };
 		89A03A7D915BD418FA4644B8 = { isa = PBXBuildFile; fileRef = E052F81B609789631DAE1DD5; };
-		CC60E0943F28A40C67FA99EA = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FreediveApneaTrainer.swift"; sourceTree = "<group>"; };
-		4829A6F382137B51A2E199A2 = { isa = PBXBuildFile; fileRef = CC60E0943F28A40C67FA99EA; };
-		B723A7394EAABB58F0CD169E = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FreediveTrainerView.swift"; sourceTree = "<group>"; };
-		D03BDAFD757F5EC896738A60 = { isa = PBXBuildFile; fileRef = B723A7394EAABB58F0CD169E; };
 		765A107FA913B007857C2E29 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarathonPacingEngine.swift"; sourceTree = "<group>"; };
 		63296513D136A045C9E21FEF = { isa = PBXBuildFile; fileRef = 765A107FA913B007857C2E29; };
 		3BCEA75B06A11759402F574E = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarathonStrategyView.swift"; sourceTree = "<group>"; };
@@ -44,12 +40,10 @@
 		C0F4E89A0651013D53B809C4 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "SportsLab.entitlements"; sourceTree = "<group>"; };
 		AAF79DF03555B6257306F27A = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportsLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC523EE77F88BE09EBBB0B4A = { isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsLabTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		E21BBFFC2AE541EBB01D0E52 = { isa = PBXGroup; children = ( 8B9BB05FE0DDEE3B826DA5CC, 0F7A3CE1551D525E66188EEC, 63D1D217E3278F6922F36CD2, D233D58C65A9BA4E1A2947B3, 479A83DC29829DB0C2BA3138, 729B83BF18F5792175BF994D, 1CBF6DBB3B76CFE6FA418193, 5162DBCADBC841078D0E7368, E052F81B609789631DAE1DD5, CC60E0943F28A40C67FA99EA, B723A7394EAABB58F0CD169E, 765A107FA913B007857C2E29, 3BCEA75B06A11759402F574E, 3E56CB1EE886185433F23A16, 71C5C8DC8341FEC347BFAF02, 03D5CE4A15870C918801A5BE, C0F4E89A0651013D53B809C4 ); path = SportsLab; sourceTree = "<group>"; };
 		89AF9FCB340F928B6E94545E = { isa = PBXGroup; children = ( A007B75793D05949A547DF9A ); path = SportsLabTests; sourceTree = "<group>"; };
 		166E9324A1633C3A3EB28370 = { isa = PBXGroup; children = ( AAF79DF03555B6257306F27A, BC523EE77F88BE09EBBB0B4A ); name = Products; sourceTree = "<group>"; };
 		E602E7E5D4E11557890EC2E1 = { isa = PBXGroup; children = ( A2C690FCD77794C34BD4141D, 8B041CB35B742F1E0C544AC9 ); name = Frameworks; sourceTree = "<group>"; };
 		F7F7214E92594296A979E056 = { isa = PBXGroup; children = ( E21BBFFC2AE541EBB01D0E52, 89AF9FCB340F928B6E94545E, 166E9324A1633C3A3EB28370, E602E7E5D4E11557890EC2E1 ); sourceTree = "<group>"; };
-		BF5416326A7AA6D72559A1D8 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( 76EA618D0CA1979630CC7E76, 0AFDC687D68A493E07549E94, 0649B7923D6E8D50FC26C202, 9766202AA0E99831B3460E39, 9FFED62DA376E3A121FAFDCA, 4C651F372242E7A9CA853C2D, B1D87B9D14092ECE54EE20B1, 36068B7EB00D7189460A1F84, 89A03A7D915BD418FA4644B8, 4829A6F382137B51A2E199A2, D03BDAFD757F5EC896738A60, 63296513D136A045C9E21FEF, 150B50C01EDE68B6D355983B ); runOnlyForDeploymentPostprocessing = 0; };
 		54ED5A0E5FAA595B0DFE9F85 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( DC64D35F04CE322A6F5721EA, 1404C1B05CF37366E98967F7 ); runOnlyForDeploymentPostprocessing = 0; };
 		86DBAB0AC96245C53A7222B1 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( B950AF2158323111956FF064, 8D864425D9BCB6B0AA4283A5 ); runOnlyForDeploymentPostprocessing = 0; };
 		8629289986A72086E4D4A1C8 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( E0036CD3F42D6B7A0A3ECA16 ); runOnlyForDeploymentPostprocessing = 0; };

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct GolfSwingView: View {
@@ -9,80 +10,287 @@ struct GolfSwingView: View {
     @State private var downswingMs = 310.0
     @State private var peakGyro = 1240.0
     @State private var planeDeviation = 2.0
+    @State private var replayProgress = 1.0
+    @State private var isReplaying = false
+    @State private var showSimulatorTuner = false
 
     private let clubs = ["1号木", "3号木", "7号铁", "P杆"]
+    private let replayTimer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let latest = analyzer.records.first {
-                    Section("最新挥杆轨迹（含标准平面参考线）") {
-                        SwingTrajectoryCanvas(points: latest.points)
-                            .frame(height: 230)
-                            .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.05, blue: 0.09),
+                    Color(red: 0.06, green: 0.09, blue: 0.15),
+                    Color(red: 0.03, green: 0.05, blue: 0.09)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                        HStack {
-                            MetricBadge(title: "杆头速度", value: "\(latest.estimatedClubSpeedMph) mph")
-                            MetricBadge(title: "节奏比", value: "\(String(format: "%.2f", latest.tempoRatio)):1")
-                            MetricBadge(title: "一致性", value: "\(latest.consistencyScore)分")
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    clubPillBar
+                    trajectoryRadarCard
+                    if let latest = analyzer.records.first {
+                        telemetryHudBar(for: latest)
+                        coachingAndSummaryCard(for: latest)
+                    }
+                    liveCaptureCard
+                    simulatorDrawerCard
+                    healthGolfCard
+                    historySection
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 28)
+            }
+        }
+        .navigationTitle("挥杆雷达实验室")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .preferredColorScheme(.dark)
+        .onReceive(replayTimer) { _ in
+            guard isReplaying else { return }
+            if replayProgress >= 1.0 {
+                replayProgress = 0.0
+            }
+            replayProgress = min(1.0, replayProgress + 0.025)
+            if replayProgress >= 1.0 {
+                isReplaying = false
+            }
+        }
+    }
+
+    private var clubPillBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(clubs, id: \.self) { club in
+                    let active = selectedClub == club
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            selectedClub = club
                         }
-                        Text("轨迹倾向：\(latest.pathTendency) · 平面偏差 \(String(format: "%.1f°", latest.planeDeviationDegrees))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("动作建议：\(GolfSwingAnalyzer.coachingAdvice(tempoRatio: latest.tempoRatio, planeDeviationDegrees: latest.planeDeviationDegrees))")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+                    } label: {
+                        Text(club)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(active ? .black : .white.opacity(0.75))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(active ? Color.cyan : Color.white.opacity(0.08))
+                            )
                     }
                 }
+            }
+        }
+    }
 
-                if let summary = analyzer.clubSummary(for: selectedClub) {
-                    Section("\(selectedClub) 历史均值（\(summary.count) 次）") {
-                        HStack {
-                            MetricBadge(title: "平均杆速", value: "\(summary.avgSpeedMph) mph")
-                            MetricBadge(title: "平均节奏", value: "\(String(format: "%.2f", summary.avgTempo)):1")
-                            MetricBadge(title: "平均评分", value: "\(summary.avgScore)分")
-                        }
-                    }
+    private var trajectoryRadarCard: some View {
+        let activePoints = analyzer.records.first?.points
+            ?? GolfSwingAnalyzer.generateTrajectory(planeDeviationDegrees: planeDeviation)
+
+        return VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(analyzer.records.first != nil ? "实测挥杆平面雷达" : "预演挥杆平面雷达")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Text(analyzer.records.first?.pathTendency ?? "调整下方参数或开启 100Hz 采集")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
                 }
-
-                Section("挥杆采集 / 参数模拟") {
-                    Picker("球杆", selection: $selectedClub) {
-                        ForEach(clubs, id: \.self) { Text($0).tag($0) }
+                Spacer()
+                Button {
+                    if isReplaying {
+                        isReplaying = false
+                    } else {
+                        if replayProgress >= 0.99 { replayProgress = 0.0 }
+                        isReplaying = true
                     }
-                    .pickerStyle(.segmented)
+                } label: {
+                    Label(isReplaying ? "暂停" : "回放轨迹", systemImage: isReplaying ? "pause.fill" : "play.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.cyan, in: Capsule())
+                }
+            }
 
-                    HStack {
-                        Button(analyzer.isCapturing ? "停止采集" : "开始真机采集") {
-                            if analyzer.isCapturing {
-                                analyzer.stopLiveCapture(club: selectedClub)
-                            } else {
-                                analyzer.startLiveCapture(club: selectedClub)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(analyzer.isCapturing ? .red : .green)
+            SwingTrajectoryCanvas(points: activePoints, progress: replayProgress)
+                .frame(height: 250)
 
-                        Spacer()
-                        Text("样本: \(analyzer.liveSamplesCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(analyzer.liveStatusText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Text("帧回放")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.6))
+                Slider(value: $replayProgress, in: 0.05...1.0)
+                    .tint(.cyan)
+                Text("\(Int((replayProgress * 100).rounded()))%")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.cyan)
+                    .frame(width: 36, alignment: .trailing)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
 
-                    VStack(alignment: .leading) {
-                        Text("上杆耗时: \(Int(backswingMs)) ms")
-                        Slider(value: $backswingMs, in: 450...1500, step: 10)
-                        Text("下杆耗时: \(Int(downswingMs)) ms")
-                        Slider(value: $downswingMs, in: 180...600, step: 10)
-                        Text("峰值角速度: \(Int(peakGyro)) deg/s")
-                        Slider(value: $peakGyro, in: 600...1800, step: 20)
-                        Text("平面偏差: \(String(format: "%.1f°", planeDeviation))")
-                        Slider(value: $planeDeviation, in: -12...12, step: 0.5)
-                    }
+    private func telemetryHudBar(for record: GolfSwingRecord) -> some View {
+        HStack(spacing: 10) {
+            HudGaugeCard(
+                title: "杆头速度",
+                value: String(format: "%.1f", record.estimatedClubSpeedMph),
+                unit: "mph",
+                accent: .cyan,
+                sublabel: record.club
+            )
 
-                    Button("生成挥杆分析") {
+            HudGaugeCard(
+                title: "节奏比例",
+                value: String(format: "%.2f", record.tempoRatio),
+                unit: ":1",
+                accent: abs(record.tempoRatio - 3.0) <= 0.35 ? .mint : .orange,
+                sublabel: "标准 3.00:1"
+            )
+
+            HudGaugeCard(
+                title: "一致性",
+                value: "\(record.consistencyScore)",
+                unit: "分",
+                accent: record.consistencyScore >= 85 ? .green : .orange,
+                sublabel: String(format: "偏差 %.1f°", record.planeDeviationDegrees)
+            )
+        }
+    }
+
+    private func coachingAndSummaryCard(for latest: GolfSwingRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.cyan)
+                Text("生物力学动作建议")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(GolfSwingAnalyzer.coachingAdvice(tempoRatio: latest.tempoRatio, planeDeviationDegrees: latest.planeDeviationDegrees))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.85))
+                .lineSpacing(3)
+
+            if let summary = analyzer.clubSummary(for: selectedClub) {
+                Divider().overlay(Color.white.opacity(0.08))
+                HStack {
+                    Text("\(selectedClub) 均值（\(summary.count) 次）")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.65))
+                    Spacer()
+                    Text("\(summary.avgSpeedMph) mph · \(String(format: "%.2f", summary.avgTempo)):1 · \(summary.avgScore)分")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.cyan)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.cyan.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.cyan.opacity(0.24), lineWidth: 1)
+                )
+        )
+    }
+
+    private var liveCaptureCard: some View {
+        HStack(spacing: 14) {
+            Button {
+                if analyzer.isCapturing {
+                    analyzer.stopLiveCapture(club: selectedClub)
+                    replayProgress = 0.0
+                    isReplaying = true
+                } else {
+                    analyzer.startLiveCapture(club: selectedClub)
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .stroke((analyzer.isCapturing ? Color.red : Color.mint).opacity(0.35), lineWidth: 4)
+                        .frame(width: 58, height: 58)
+                    Circle()
+                        .fill(analyzer.isCapturing ? Color.red : Color.mint)
+                        .frame(width: 46, height: 46)
+                    Image(systemName: analyzer.isCapturing ? "stop.fill" : "gyroscope")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.black)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(analyzer.isCapturing ? "100Hz 传感器采集中" : "真机陀螺仪采集")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("\(analyzer.liveSamplesCount) 帧")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.mint)
+                }
+                Text(analyzer.liveStatusText)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(2)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private var simulatorDrawerCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    showSimulatorTuner.toggle()
+                }
+            } label: {
+                HStack {
+                    Label("参数模拟与轨迹微调", systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Image(systemName: showSimulatorTuner ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+
+            if showSimulatorTuner {
+                VStack(alignment: .leading, spacing: 8) {
+                    SliderRow(title: "上杆耗时", valueText: "\(Int(backswingMs)) ms", value: $backswingMs, range: 450...1500, step: 10, tint: .cyan)
+                    SliderRow(title: "下杆耗时", valueText: "\(Int(downswingMs)) ms", value: $downswingMs, range: 180...600, step: 10, tint: .orange)
+                    SliderRow(title: "峰值角速度", valueText: "\(Int(peakGyro)) deg/s", value: $peakGyro, range: 600...1800, step: 20, tint: .mint)
+                    SliderRow(title: "平面偏差", valueText: String(format: "%.1f°", planeDeviation), value: $planeDeviation, range: -12...12, step: 0.5, tint: .purple)
+
+                    Button {
                         analyzer.recordManual(
                             club: selectedClub,
                             backswingMs: Int(backswingMs),
@@ -90,97 +298,214 @@ struct GolfSwingView: View {
                             peakAngularVelocityDegPerSec: peakGyro,
                             planeDeviationDegrees: planeDeviation
                         )
+                        replayProgress = 0.0
+                        isReplaying = true
+                    } label: {
+                        Text("生成挥杆分析并回放")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(
+                                LinearGradient(colors: [.cyan, .mint], startPoint: .leading, endPoint: .trailing),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
                     }
-                    .buttonStyle(.borderedProminent)
-                }
-
-                Section("Apple Health 高尔夫记录") {
-                    if health.golfWorkouts.isEmpty {
-                        Text("暂无高尔夫体能训练记录（可在总览页开启 HealthKit 授权）")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(health.golfWorkouts) { item in
-                            HStack {
-                                Text(item.startDate.formatted(date: .abbreviated, time: .shortened))
-                                Spacer()
-                                Text("\(Int(item.durationMinutes)) 分钟 · \(Int(item.activeEnergyKcal)) kcal")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(.caption)
-                        }
-                    }
-                }
-
-                Section("历史挥杆记录") {
-                    ForEach(analyzer.records) { record in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("\(record.club) · \(record.consistencyScore)分")
-                                    .font(.headline)
-                                Spacer()
-                                Text("\(record.estimatedClubSpeedMph) mph")
-                                    .foregroundStyle(.blue)
-                            }
-                            Text("节奏 \(String(format: "%.2f", record.tempoRatio)):1 · \(record.pathTendency)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .onDelete { offsets in
-                        for idx in offsets {
-                            analyzer.deleteRecord(analyzer.records[idx])
-                        }
-                    }
+                    .padding(.top, 4)
                 }
             }
-            .navigationTitle("高尔夫挥杆轨迹")
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private var healthGolfCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Apple Health 高尔夫体能")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+
+            if health.golfWorkouts.isEmpty {
+                Text("暂无高尔夫体能记录（可在首页点击同步体能数据）")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            } else {
+                ForEach(health.golfWorkouts) { item in
+                    HStack {
+                        Text(item.startDate.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.white.opacity(0.8))
+                        Spacer()
+                        Text("\(Int(item.durationMinutes)) 分钟 · \(Int(item.activeEnergyKcal)) kcal")
+                            .foregroundStyle(.mint)
+                    }
+                    .font(.caption2)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !analyzer.records.isEmpty {
+                Text("历史挥杆档案")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.9))
+
+                ForEach(analyzer.records) { record in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(record.club) · \(record.consistencyScore)分")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                            Text("节奏 \(String(format: "%.2f", record.tempoRatio)):1 · \(record.pathTendency)")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        Spacer()
+                        Text("\(record.estimatedClubSpeedMph) mph")
+                            .font(.subheadline.monospacedDigit().weight(.bold))
+                            .foregroundStyle(.cyan)
+                        Button(role: .destructive) {
+                            analyzer.deleteRecord(record)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.45))
+                                .padding(.leading, 8)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
         }
     }
 }
 
-private struct MetricBadge: View {
+private struct HudGaugeCard: View {
     let title: String
     let value: String
+    let unit: String
+    let accent: Color
+    let sublabel: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.6))
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(accent)
+                Text(unit)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            Text(sublabel)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(accent.opacity(0.28), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct SliderRow: View {
+    let title: String
+    let valueText: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let tint: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.headline)
+            HStack {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.75))
+                Spacer()
+                Text(valueText)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+            Slider(value: $value, in: range, step: step)
+                .tint(tint)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct SwingTrajectoryCanvas: View {
     let points: [SwingPoint]
+    let progress: Double
 
     private var referencePoints: [SwingPoint] {
         GolfSwingAnalyzer.generateTrajectory(planeDeviationDegrees: 0.0)
     }
 
+    private var visibleCount: Int {
+        guard !points.isEmpty else { return 0 }
+        return max(2, min(points.count, Int((Double(points.count) * progress).rounded())))
+    }
+
+    private var activePoint: SwingPoint? {
+        guard visibleCount > 0, visibleCount <= points.count else { return points.last }
+        return points[visibleCount - 1]
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(red: 0.04, green: 0.06, blue: 0.11))
 
             Canvas { context, size in
+                drawRadarGrid(in: size, context: &context)
+
                 drawPath(
                     for: referencePoints,
                     in: size,
                     context: &context,
-                    color: .gray.opacity(0.45),
-                    style: StrokeStyle(lineWidth: 2, dash: [5, 4])
+                    color: .white.opacity(0.22),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
                 )
 
-                let backswing = points.filter { $0.phase == "backswing" }
-                let downswing = points.filter { $0.phase == "downswing" }
+                let sliced = Array(points.prefix(visibleCount))
+                let backswing = sliced.filter { $0.phase == "backswing" }
+                let downswing = sliced.filter { $0.phase == "downswing" }
 
                 drawPath(
                     for: backswing,
                     in: size,
                     context: &context,
-                    color: .blue,
+                    color: Color.cyan.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round)
+                )
+                drawPath(
+                    for: backswing,
+                    in: size,
+                    context: &context,
+                    color: .cyan,
                     style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
                 )
 
@@ -189,29 +514,63 @@ private struct SwingTrajectoryCanvas: View {
                     for: connectedDownswing,
                     in: size,
                     context: &context,
+                    color: Color.orange.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round)
+                )
+                drawPath(
+                    for: connectedDownswing,
+                    in: size,
+                    context: &context,
                     color: .orange,
                     style: StrokeStyle(lineWidth: 4.0, lineCap: .round, lineJoin: .round)
                 )
 
-                if let top = backswing.last {
-                    drawMarker(at: top, in: size, context: &context, color: .blue)
-                }
-                if let impact = downswing.last {
-                    drawMarker(at: impact, in: size, context: &context, color: .orange)
+                if let head = activePoint {
+                    let center = CGPoint(x: head.x * size.width, y: head.y * size.height)
+                    let halo = CGRect(x: center.x - 10, y: center.y - 10, width: 20, height: 20)
+                    let core = CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
+                    let headColor: Color = head.phase == "backswing" ? .cyan : .orange
+                    context.fill(Path(ellipseIn: halo), with: .color(headColor.opacity(0.35)))
+                    context.fill(Path(ellipseIn: core), with: .color(.white))
                 }
             }
 
             HStack(spacing: 12) {
-                Label("标准平面", systemImage: "line.diagonal")
-                    .foregroundStyle(.gray)
+                Label("标准3:1平面", systemImage: "line.diagonal")
+                    .foregroundStyle(.white.opacity(0.55))
                 Label("上杆", systemImage: "circle.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.cyan)
                 Label("下杆", systemImage: "circle.fill")
                     .foregroundStyle(.orange)
+                Spacer()
+                if let phase = activePoint?.phase {
+                    Text(phase == "backswing" ? "上杆阶段" : "下杆击球")
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            (phase == "backswing" ? Color.cyan : Color.orange).opacity(0.22),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(phase == "backswing" ? .cyan : .orange)
+                }
             }
-            .font(.caption2)
-            .padding(8)
+            .font(.caption2.weight(.semibold))
+            .padding(10)
         }
+    }
+
+    private func drawRadarGrid(in size: CGSize, context: inout GraphicsContext) {
+        let center = CGPoint(x: size.width * 0.5, y: size.height * 0.55)
+        for radius in stride(from: 42.0, through: 130.0, by: 42.0) {
+            let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            context.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.06)), lineWidth: 1)
+        }
+        var cross = Path()
+        cross.move(to: CGPoint(x: 0, y: center.y))
+        cross.addLine(to: CGPoint(x: size.width, y: center.y))
+        cross.move(to: CGPoint(x: center.x, y: 0))
+        cross.addLine(to: CGPoint(x: center.x, y: size.height))
+        context.stroke(cross, with: .color(.white.opacity(0.06)), lineWidth: 1)
     }
 
     private func drawPath(
@@ -232,16 +591,5 @@ private struct SwingTrajectoryCanvas: View {
             }
         }
         context.stroke(path, with: .color(color), style: style)
-    }
-
-    private func drawMarker(
-        at point: SwingPoint,
-        in size: CGSize,
-        context: inout GraphicsContext,
-        color: Color
-    ) {
-        let center = CGPoint(x: point.x * size.width, y: point.y * size.height)
-        let rect = CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
-        context.fill(Path(ellipseIn: rect), with: .color(color))
     }
 }

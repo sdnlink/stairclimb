@@ -22,7 +22,6 @@ struct HealthMetricsSnapshot: Equatable {
     var golfWorkouts: [HealthWorkoutSummary] = []
     var tennisWorkouts: [HealthWorkoutSummary] = []
     var climbingWorkouts: [HealthWorkoutSummary] = []
-    var freediveWorkouts: [HealthWorkoutSummary] = []
     var runningWorkouts: [HealthWorkoutSummary] = []
 }
 
@@ -102,9 +101,6 @@ final class HealthKitService: ObservableObject {
             golfWorkouts: workoutList.filter { $0.activityType == .golf }.map(Self.summarize),
             tennisWorkouts: workoutList.filter { $0.activityType == .tennis }.map(Self.summarize),
             climbingWorkouts: workoutList.filter { $0.activityType == .climbing }.map(Self.summarize),
-            freediveWorkouts: workoutList.filter {
-                $0.activityType == .underwaterDiving || $0.activityType == .swimming
-            }.map(Self.summarize),
             runningWorkouts: runs.map(Self.summarize)
         )
     }

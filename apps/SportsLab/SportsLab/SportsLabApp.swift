@@ -7,7 +7,6 @@ struct SportsLabApp: App {
     @StateObject private var golf = GolfSwingAnalyzer()
     @StateObject private var tennis = TennisShotTracker()
     @StateObject private var climbing = ClimbingLogStore()
-    @StateObject private var freedive = FreediveApneaTrainer()
 
     var body: some Scene {
         WindowGroup {
@@ -15,8 +14,7 @@ struct SportsLabApp: App {
                 health: health,
                 golf: golf,
                 tennis: tennis,
-                climbing: climbing,
-                freedive: freedive
+                climbing: climbing
             )
         }
     }

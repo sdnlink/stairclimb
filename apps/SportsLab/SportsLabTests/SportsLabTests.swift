@@ -76,13 +76,6 @@ final class SportsLabTests: XCTestCase {
         XCTAssertEqual(store.summary.highestBouldering, "V4")
     }
 
-    func testFreediveApneaTables() {
-        let co2 = FreediveApneaTrainer.buildTable(kind: .co2, personalBestSeconds: 160, roundsCount: 8)
-        XCTAssertEqual(co2.count, 8)
-        XCTAssertEqual(co2.first?.holdSeconds, 80)
-        XCTAssertGreaterThan(co2.first!.restSeconds, co2.last!.restSeconds)
-    }
-
     func testMarathonPlanWithHealth() {
         let health = HealthMetricsSnapshot(authorized: true, statusMessage: "ok", vo2Max: 52.0, recentRunPaceSecondsPerKm: 300)
         let plan = MarathonPacingEngine.buildPlan(distance: .full, targetMinutes: 225, strategy: .negativeSplit, bodyWeightKg: 68, temperatureCelsius: 24, health: health)
