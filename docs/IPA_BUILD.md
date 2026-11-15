@@ -55,6 +55,13 @@ python3 scripts/build_signed_ipa.py --mode ad-hoc --output .runtime/ipa-signed-m
 
 ## 当前验证边界
 
-Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测试，覆盖错误团队、过期、缺HealthKit、通配App ID、错误分发模式、缺Secret、模拟器误打包、签名成功/失败的材料清理与密码不落日志。这些测试用替代Apple命令，仅验证脚本行为，不证明完成Swift编译或真实签名。需推送代码并在GitHub手动运行，才能取得真实Mac构建结果和IPA。
+Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测试，覆盖错误团队、过期、缺HealthKit、通配App ID、错误分发模式、缺Secret、模拟器误打包、签名成功/失败的材料清理与密码不落日志。这些测试用替代Apple命令，仅验证脚本行为，不证明完成Swift编译或真实签名。首轮GitHub Mac运行已完成Debug/Release编译，但真实Keychain测试因关闭模拟器签名返回-34018，未导出IPA。本次改为模拟器ad hoc签名并显示失败详情，仍需新提交的Actions运行确认修复后结果，见[CI修复记录](verification-keychain-ci.md)。
 
 聊天目前按所有者要求关闭，IPA使用现有`CommunityFeatures.chatEnabled = false`。重新开放交流前需完成[UGC前置条件](CIRCLE_COMMUNITY.md)。
+
+
+## XCTest失败与重跑
+
+`xcodebuild test`退出65可能是断言失败，不代表应用编译失败。入口会直接打印编译错误或失败断言的上下文；若有`Tests.xcresult`，即使测试失败也会尝试提取统计和失败详情。原始日志与结果包仍由always步骤上传。实际Keychain测试保持启用，模拟器通过ad hoc签名运行，不依赖本仓库的DEV/DIST证书。
+
+推送修复提交后，在新提交上运行workflow。直接点旧失败运行的Re-run会继续使用旧源码，无法应用新修复。诊断产物在运行页面底部Artifacts，名称为`StairClimb-ipa-diagnostics-<run_id>-<attempt>`；解压后查看`xctest.log`和`test-summary.log`。

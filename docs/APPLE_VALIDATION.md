@@ -1,6 +1,6 @@
 # Mac 构建、XCTest 与 iPhone 验收
 
-本页交付 `apple_build_validation` 的可执行入口，承接需求版本7的交付优化和版本8的恢复指令。保留原生 Swift/SwiftUI、HealthKit、Keychain、邮箱认证和严格 HTTPS；不改变历史模块定义。当前执行环境为 Linux，下面的 **Mac 构建、XCTest、签名和 iPhone 项目均未执行**，不能把入口或 CI 配置的存在当作平台通过。
+本页交付 `apple_build_validation` 的可执行入口，承接需求版本7的交付优化和版本8的恢复指令。保留原生 Swift/SwiftUI、HealthKit、Keychain、邮箱认证和严格 HTTPS；不改变历史模块定义。当前编辑环境为Linux。2026-11-15已取得GitHub Actions首次Mac运行记录：Debug/Release编译通过，99项XCTest中真实Keychain读写用例返回-34018，整体失败，IPA导出未开始。模拟器签名修复后的结果仍待新一次Actions验证；真机签名、安装及交互尚未验证。
 
 ## 一次运行完整 Mac 检查
 
@@ -15,7 +15,7 @@ python3 scripts/validate_apple.py --device-id <已存在的UDID> --output .runti
 
 第一条命令在仓库根目录执行；在其他目录使用脚本的绝对路径。脚本自动选择可用且版本最高的 iPhone 模拟器，不假定机器安装了“iPhone 16”。显式 UDID 不存在/不兼容时失败，不暗中换设备；不会创建、删除、擦除或主动关闭模拟器。Xcode 测试会启动所选模拟器。
 
-执行顺序为现有工程结构/隐私/网络检查、Xcode版本、模拟器列表、Debug构建、Release构建、Debug全部 XCTest。实际工程是 `ios/StairClimb.xcodeproj`，共享 scheme 是 `StairClimb`，关联 `StairClimbTests`；不使用 `only-testing`/`skip-testing` 筛掉用例。两个构建使用 `generic/platform=iOS Simulator`，测试使用所选设备 ID。仅模拟器的签名关闭：`CODE_SIGNING_ALLOWED=NO`；不删除 HealthKit entitlement/capability，不修改 Info.plist、ATS、URLSession 或证书信任。
+执行顺序为现有工程结构/隐私/网络检查、Xcode版本、模拟器列表、Debug构建、Release构建、Debug全部 XCTest。实际工程是 `ios/StairClimb.xcodeproj`，共享 scheme 是 `StairClimb`，关联 `StairClimbTests`；不使用 `only-testing`/`skip-testing` 筛掉用例。两个构建使用 `generic/platform=iOS Simulator`，测试使用所选设备 ID。模拟器启用无需Apple开发者证书的ad hoc签名：`CODE_SIGNING_ALLOWED=YES`、`CODE_SIGN_IDENTITY=-`、`AD_HOC_CODE_SIGNING_ALLOWED=YES`。真实Keychain测试需要测试宿主保留签名，不能用关闭签名或跳过用例来绕过-34018；不删除 HealthKit entitlement/capability，不修改 Info.plist、ATS、URLSession 或证书信任。
 
 每次输出到新的 `.runtime/apple-validation/<UTC时间-随机后缀>/`，也可用 `--output` 指定**不存在**的目录。它包含：
 
@@ -23,15 +23,15 @@ python3 scripts/validate_apple.py --device-id <已存在的UDID> --output .runti
 - `structure.log`、`xcode-version.log`、`simulators.log`、`build-debug.log`、`build-release.log`、`xctest.log`、`test-summary.log`。
 - `Tests.xcresult` 原始结果包和独立 `DerivedData/`。可在 Xcode 打开结果包检查每项测试。
 
-Xcode 16+ 的 `xcrun xcresulttool get test-results summary --path ...` 返回的测试统计必须有非零通过数量、无失败、无跳过；缺包、格式不兼容、零测试、任一子命令失败或运行期间源码改变，均失败退出。退出码0才代表该次 Mac 模拟器入口完成；入口失败退出2，子命令原始退出码和日志仍保留。不要覆盖旧目录后重用成功收据。只上传或分享审核需要的输出；不要混入 `.runtime` 中的私钥、数据库凭证或捕获邮件。
+Xcode 16+ 的 `xcrun xcresulttool get test-results summary --path ...` 返回的测试统计必须有非零通过数量、无失败、无跳过；缺包、格式不兼容、零测试、任一子命令失败或运行期间源码改变，均失败退出。失败时会直接在Actions控制台显示错误上下文；XCTest失败后仍尝试读取结果包的统计和具体失败用例，记录在收据中，且保留原始失败退出码。退出码0才代表该次 Mac 模拟器入口完成；入口失败退出2，子命令原始退出码和日志仍保留。不要覆盖旧目录后重用成功收据。只上传或分享审核需要的输出；不要混入 `.runtime` 中的私钥、数据库凭证或捕获邮件。
 
-若找不到Xcode，先用 `xcode-select -p`、`xcodebuild -version` 检查本人Mac上的选择，在 Xcode 设置中安装所需平台/runtime；入口不会下载Xcode、变更全局选择或代签名。Linux直接调用明确失败，不生成 Apple 通过收据。
+若找不到Xcode，先用 `xcode-select -p`、`xcodebuild -version` 检查本人Mac上的选择，在 Xcode 设置中安装所需平台/runtime；入口不会下载Xcode、变更全局选择或安装开发者签名材料。Linux直接调用明确失败，不生成 Apple 通过收据。
 
 ## macOS workflow
 
 [apple.yml](../.github/workflows/apple.yml) 在 `macos-15` runner 上执行同一个入口；依赖的 iOS 源码、工程、规则或入口变更触发 main push/PR，也支持手动 `workflow_dispatch`。使用 runner 已安装的默认 Xcode 和 iPhone runtime，脚本要求版本至少16且runtime至少iOS17；缺失时如实失败，不下载其他平台或减少测试。只读仓库权限、不持久化 checkout 凭证、不需要开发者Team/签名密钥、SMTP或数据库密钥。
 
-日志、收据和 `.xcresult` 由 `always()` 步骤保存7天，构建或测试失败也保留已有证据。workflow仅为可审查的仓库配置；当前没有推送、触发远程Actions或得到CI结果。若仓库未托管于 GitHub，直接在自有Mac或其他macOS CI运行同一命令即可；不为启用CI注册外部账号。
+日志、收据和 `.xcresult` 由 `always()` 步骤保存7天，构建或测试失败也保留已有证据。首轮真实CI已运行并因Keychain测试失败终止，详细证据和修复见[Keychain CI记录](verification-keychain-ci.md)；不能把脚本回归通过当作修复后Mac实测已通过。若仓库未托管于 GitHub，直接在自有Mac或其他macOS CI运行同一命令即可；不为启用CI注册外部账号。
 
 Apple 的[xcodebuild命令说明](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)与[Xcode 16 xcresulttool更新](https://developer.apple.com/documentation/xcode-release-notes/xcode-16-release-notes)是入口依据。机器实际工具输出和结果包仍是最终执行证据。
 
@@ -58,4 +58,4 @@ Apple 的[xcodebuild命令说明](https://developer.apple.com/library/archive/te
 
 ## IPA 打包流程
 
-新增[Build iOS IPA workflow](../.github/workflows/ipa.yml)，在同一完整模拟器验证入口通过后执行真机架构Release归档并打包。支持无签名和Development/Ad Hoc/App Store手动签名导出，现有GitHub证书变量的完整映射、产物下载及安装限制见[IPA打包](IPA_BUILD.md)。当前无远程Actions执行记录，不能以配置文件存在代替真实构建通过。
+新增[Build iOS IPA workflow](../.github/workflows/ipa.yml)，在同一完整模拟器验证入口通过后执行真机架构Release归档并打包。支持无签名和Development/Ad Hoc/App Store手动签名导出，现有GitHub证书变量的完整映射、产物下载及安装限制见[IPA打包](IPA_BUILD.md)。已有首轮远程Actions执行记录，因Keychain测试失败而未导出IPA；本次修复需新提交运行验证。

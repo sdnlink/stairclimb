@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from validate_apple import ROOT, ValidationFailure, select_device, validate
+from validate_apple import ROOT, ValidationFailure, failure_excerpt, select_device, validate
 
 
 DEVICE = '12345678-1234-1234-1234-123456789ABC'
@@ -36,6 +36,9 @@ if Path(sys.argv[0]).name == 'xcodebuild':
         action = args[-1]
         config = args[args.index('-configuration') + 1]
         if os.environ.get('APPLE_FIXTURE_FAILURE') == action + '-' + config:
+            if action == 'test' and os.environ.get('APPLE_FIXTURE_FAILED_BUNDLE'):
+                Path(args[args.index('-resultBundlePath') + 1]).mkdir()
+            print('IdentityVaultTests.swift:72: error: XCTAssertNil failed: Failure(status: -34018)')
             print('intentional fake tool failure')
             sys.exit(65)
         if action == 'test':
@@ -47,6 +50,9 @@ if Path(sys.argv[0]).name == 'xcodebuild':
 elif args[:2] == ['simctl', 'list']:
     print(os.environ['APPLE_FIXTURE_INVENTORY'])
 elif args[:4] == ['xcresulttool', 'get', 'test-results', 'summary']:
+    if os.environ.get('APPLE_FIXTURE_SUMMARY_ERROR'):
+        print('Could not read test results')
+        sys.exit(1)
     print(os.environ.get('APPLE_FIXTURE_SUMMARY', json.dumps({
         'totalTestCount': 91, 'passedTests': 91, 'failedTests': 0, 'skippedTests': 0})))
 else:
@@ -107,7 +113,11 @@ class AppleValidationTests(unittest.TestCase):
         for args in builds + [test]:
             self.assertIn(str(self.root/'ios/StairClimb.xcodeproj'), args)
             self.assertEqual(args[args.index('-scheme')+1], 'StairClimb')
-            self.assertIn('CODE_SIGNING_ALLOWED=NO', args)
+            self.assertIn('CODE_SIGNING_ALLOWED=YES', args)
+            self.assertIn('CODE_SIGN_IDENTITY=-', args)
+            self.assertIn('AD_HOC_CODE_SIGNING_ALLOWED=YES', args)
+            self.assertNotIn('CODE_SIGNING_ALLOWED=NO', args)
+            self.assertFalse(any(arg.startswith(('DEVELOPMENT_TEAM=', 'PROVISIONING_PROFILE_SPECIFIER=')) for arg in args))
             self.assertFalse(any(arg.startswith(('-only-testing', '-skip-testing')) for arg in args))
         self.assertIn('ios/StairClimb/StairClimb.entitlements', receipt['source']['sha256'])
         self.assertIn('ios/StairClimbTests/EmailAuthTests.swift', receipt['source']['sha256'])
@@ -127,6 +137,47 @@ class AppleValidationTests(unittest.TestCase):
                 self.run_fixture()
         self.assertEqual(self.receipt()['status'], 'failed')
         self.assertFalse(any('xcresulttool' in args for args in self.commands()))
+
+    def test_failed_assertion_is_visible_in_console(self):
+        console = io.StringIO()
+        with patch.dict(os.environ, {'APPLE_FIXTURE_FAILURE': 'test-Debug'}), \
+                patch('validate_apple.platform.system', return_value='Darwin'), redirect_stdout(console):
+            with self.assertRaisesRegex(ValidationFailure, 'xctest failed'):
+                validate(self.root, self.output)
+        self.assertIn('XCTAssertNil failed', console.getvalue())
+        self.assertIn('-34018', console.getvalue())
+        self.assertEqual(self.receipt()['commands'][-1]['exit_status'], 65)
+
+    def test_failed_bundle_still_collects_counts_without_masking_xcode_failure(self):
+        summary = {'totalTestCount': 99, 'passedTests': 98, 'failedTests': 1, 'skippedTests': 0,
+                   'testFailures': [{'testName': 'testActualKeychainInsertUpdateAndRead',
+                                     'failureText': 'Missing entitlement -34018'}]}
+        with patch.dict(os.environ, {'APPLE_FIXTURE_FAILURE': 'test-Debug',
+                                    'APPLE_FIXTURE_FAILED_BUNDLE': '1',
+                                    'APPLE_FIXTURE_SUMMARY': json.dumps(summary)}):
+            with self.assertRaisesRegex(ValidationFailure, 'xctest failed with exit 65'):
+                self.run_fixture()
+        receipt = self.receipt()
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertEqual(receipt['tests']['failedTests'], 1)
+        self.assertEqual(receipt['test_failures'], summary['testFailures'])
+        self.assertTrue((self.output/'test-summary.log').is_file())
+
+    def test_unreadable_failed_bundle_keeps_original_exit_65(self):
+        with patch.dict(os.environ, {'APPLE_FIXTURE_FAILURE': 'test-Debug',
+                                    'APPLE_FIXTURE_FAILED_BUNDLE': '1',
+                                    'APPLE_FIXTURE_SUMMARY_ERROR': '1'}):
+            with self.assertRaisesRegex(ValidationFailure, 'xctest failed with exit 65'):
+                self.run_fixture()
+        self.assertIn('test-summary failed', self.receipt()['diagnostic_error'])
+        self.assertEqual(self.receipt()['status'], 'failed')
+
+    def test_failure_excerpt_surfaces_assertion_before_long_tail_and_is_bounded(self):
+        text = '\n'.join(['build output'] * 120 + ['File.swift:7: error: XCTAssertNil failed -34018']
+                         + ['more output'] * 200)
+        excerpt = failure_excerpt(text)
+        self.assertIn('XCTAssertNil failed -34018', excerpt)
+        self.assertLessEqual(len(excerpt.splitlines()), 90)
 
     def test_no_available_simulator_fails_before_build(self):
         with patch.dict(os.environ, {'APPLE_FIXTURE_INVENTORY': '{"devices": {}}'}):

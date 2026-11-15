@@ -21,6 +21,17 @@ class ValidationFailure(RuntimeError):
     pass
 
 
+def failure_excerpt(text, limit=90):
+    """Surface bounded compiler/assertion context without flooding the Actions console."""
+    lines = text.splitlines()
+    selected = set(range(max(0, len(lines) - 20), len(lines)))
+    pattern = re.compile(r'error:|fatal error|Testing failed|Test Case .* failed|Failing tests:', re.I)
+    for index, line in enumerate(lines):
+        if pattern.search(line):
+            selected.update(range(max(0, index - 2), min(len(lines), index + 5)))
+    return '\n'.join(lines[index][:1500] for index in sorted(selected)[:limit])
+
+
 def select_device(inventory, requested=None):
     """Select only available iPhones with an iOS runtime >= our deployment target."""
     candidates = []
@@ -81,7 +92,8 @@ def validate(root, output, requested=None):
     receipt = {'status': 'running', 'platform': platform.platform(),
                'started_at': datetime.now(timezone.utc).isoformat(),
                'source': source_snapshot(root), 'commands': [],
-               'limitations': ['Simulator builds disable signing; no device signing, HealthKit, '
+               'simulator_signing': 'Ad hoc identity (-); no Apple certificate or provisioning profile',
+               'limitations': ['Simulator builds use ad hoc signing; no device signing, HealthKit, '
                                'system certificate trust or visual interaction is verified.']}
 
     def save():
@@ -101,6 +113,8 @@ def validate(root, output, requested=None):
         save()
         print(f'{name}: exit {result.returncode}; {log}', flush=True)
         if result.returncode:
+            print(f'Failure details from {log.name}:', flush=True)
+            print(failure_excerpt(log.read_text(errors='replace')), flush=True)
             raise ValidationFailure(f'{name} failed with exit {result.returncode}; see {log}')
         return log.read_text()
 
@@ -116,14 +130,36 @@ def validate(root, output, requested=None):
         receipt['simulator'] = device
         common = ['xcodebuild', '-project', str(root/'ios/StairClimb.xcodeproj'),
                   '-scheme', 'StairClimb', '-derivedDataPath', str(output/'DerivedData'),
-                  'CODE_SIGNING_ALLOWED=NO']
+                  # A hosted XCTest exercising real Keychain needs a signed app.
+                  # Simulator ad hoc signing uses no Apple developer credentials.
+                  'CODE_SIGNING_ALLOWED=YES', 'CODE_SIGN_IDENTITY=-',
+                  'AD_HOC_CODE_SIGNING_ALLOWED=YES']
         for configuration in ['Debug', 'Release']:
             run(f'build-{configuration.lower()}', common + [
                 '-configuration', configuration, '-destination', 'generic/platform=iOS Simulator', 'build'])
         bundle = output/'Tests.xcresult'
-        run('xctest', common + ['-configuration', 'Debug', '-destination',
-                               f'platform=iOS Simulator,id={device["id"]}',
-                               '-parallel-testing-enabled', 'NO', '-resultBundlePath', str(bundle), 'test'])
+        try:
+            run('xctest', common + ['-configuration', 'Debug', '-destination',
+                                   f'platform=iOS Simulator,id={device["id"]}',
+                                   '-parallel-testing-enabled', 'NO', '-resultBundlePath', str(bundle), 'test'])
+        except ValidationFailure:
+            # xcodebuild returns 65 for failed assertions too. Preserve the original
+            # failure, but extract the result bundle before returning to Actions.
+            if bundle.is_dir():
+                try:
+                    summary_log = run('test-summary', ['xcrun', 'xcresulttool', 'get', 'test-results',
+                                                      'summary', '--path', str(bundle)])
+                    failed_summary = json.loads(summary_log.split('\n', 1)[1])
+                    if not isinstance(failed_summary, dict):
+                        raise ValueError('XCTest summary must be an object')
+                    receipt['tests'] = {key: failed_summary.get(key) for key in [
+                        'totalTestCount', 'passedTests', 'failedTests', 'skippedTests']}
+                    receipt['test_failures'] = failed_summary.get('testFailures', [])
+                    print('XCTest result summary:', json.dumps(failed_summary, ensure_ascii=False)[:16000], flush=True)
+                except (ValidationFailure, OSError, ValueError) as diagnostic_error:
+                    receipt['diagnostic_error'] = str(diagnostic_error)
+                    print('Could not read failed XCTest result:', diagnostic_error, flush=True)
+            raise
         if not bundle.is_dir():
             raise ValidationFailure('xcodebuild produced no Tests.xcresult bundle.')
         summary_log = run('test-summary', ['xcrun', 'xcresulttool', 'get', 'test-results',
