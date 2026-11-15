@@ -1,0 +1,17 @@
+Source base: 14c8aaad544865745ddcf896dd9fc0177584c8b0 + email delivery working diff
+COMMAND: python3 -m unittest backend.tests.test_email_delivery -v
+test_cleanup_failure_never_leaves_a_success_receipt (backend.tests.test_email_delivery.EmailDeliveryTests.test_cleanup_failure_never_leaves_a_success_receipt) ... ok
+test_complete_email_probe_preserves_existing_data_and_keeps_all_secrets_private (backend.tests.test_email_delivery.EmailDeliveryTests.test_complete_email_probe_preserves_existing_data_and_keeps_all_secrets_private) ... ok
+test_lost_resend_response_uses_latest_mail_to_clean_pending_registration (backend.tests.test_email_delivery.EmailDeliveryTests.test_lost_resend_response_uses_latest_mail_to_clean_pending_registration) ... ok
+test_lost_reset_response_recovers_with_new_password_and_saves_failure (backend.tests.test_email_delivery.EmailDeliveryTests.test_lost_reset_response_recovers_with_new_password_and_saves_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 31.525s
+
+OK
+
+exit_status=0
+
+Verified input SHA-256 (unchanged since the focused run):
+041aec4d4eae13d07bd860267927320521a1f4f1c70e2475c07a78195557ad62  scripts/local_service.py
+8d36bc00aff6f694e4d806fe92e467bffa798eb0c155ec9e248a11301a0f1844  backend/tests/test_email_delivery.py

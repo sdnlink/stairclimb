@@ -2,9 +2,9 @@
 
 原生 SwiftUI iOS 应用 + Rust HTTP/PostgreSQL 后端的分模块实现（按最新技术栈授权迁移）。所有楼层都是每 100 步兑换的虚拟游戏楼层，日界线统一为 **Asia/Shanghai**，不采集真实地理位置。
 
-当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行；基础持续运行交付已接受，本次补齐圈子扩展自检并提交模块复核，邮箱最终集成仍待后续模块完成。
+当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行。基础及圈子持续运行交付已接受；本次补齐邮箱认证持续实例自检，提交 `email_auth_delivery` 模块复核，整个需求的最终接受由独立reviewer和Watcher确认。
 
-邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通；[Mac自动构建/XCTest入口及真机清单](docs/APPLE_VALIDATION.md)已提供，最终集成交付继续必交，本次模块交审不代表整个需求完成。
+邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通；[Mac自动构建/XCTest入口及真机清单](docs/APPLE_VALIDATION.md)已提供，本次模块交审不代表整个需求完成。
 
 ## 本地启动
 
@@ -14,12 +14,13 @@
 python3 scripts/local_service.py start
 python3 scripts/local_service.py check
 python3 scripts/local_service.py check-circles
+python3 scripts/local_service.py check-email-auth
 python3 scripts/local_service.py status
 # 仅停止此入口的Rust及邮件捕获进程，保留数据库与日志
 python3 scripts/local_service.py stop
 ```
 
-实际地址、PID、二进制/源码摘要、数据库、迁移、日志和证书位置保存在被忽略的 `.runtime/delivery/service.json`，基础自检响应在 `probe.json`，圈子自检响应在 `circle-probe.json`；不包含凭证。基础自检用两个临时邮箱账号，圈子自检另用三个账号验证主动参与、完整分页/本人、999/1000迁圈、退出和隐私删除；结束均删除自检账号，只向本地捕获器发信。证书信任、独立停止数据库、局域网真机访问和可复现验证见[持续运行交付说明](docs/DELIVERY.md)。下方保留分步前台启动方式。
+实际地址、PID、二进制/源码摘要、数据库、迁移、日志和证书位置保存在被忽略的 `.runtime/delivery/service.json`，基础自检响应在 `probe.json`，圈子自检响应在 `circle-probe.json`，邮箱完整生命周期响应在 `email-probe.json`；不包含凭证。邮箱自检另用两个临时账号验证重发、邮件验证、刷新轮换、密码重置、旧会话失效、退出及公开字段隐私。各自检结束均删除测试账号，只向本地捕获器发信。证书信任、独立停止数据库、局域网真机访问和可复现验证见[持续运行交付说明](docs/DELIVERY.md)。下方保留分步前台启动方式。
 
 需要 Rust/Cargo、Python 3.10+（验证/迁移工具）以及可用 Docker。正式 HTTP 由本项目编译的 Rust 二进制提供，业务数据仅存 PostgreSQL；旧 Python 服务仅保留为历史参考，不参与启动或当前 HTTP 验收。本地验证使用隔离邮件捕获器，无需付费服务或开发者账号；正式邮箱投递须由部署者配置SMTP。
 

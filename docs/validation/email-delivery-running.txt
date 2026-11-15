@@ -1,0 +1,176 @@
+Source base: 14c8aaad544865745ddcf896dd9fc0177584c8b0 + email delivery working diff
+COMMAND: python3 scripts/local_service.py check-email-auth
+{
+  "status": "passed",
+  "checked_at": "2026-11-15T07:46:34.357575+00:00",
+  "address": "https://127.0.0.1:8787",
+  "rust_pid": 1521357,
+  "binary_sha256": "dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91",
+  "backend_build_source_version": "ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1",
+  "source_version": "14c8aaad544865745ddcf896dd9fc0177584c8b0",
+  "probe_sha256": "041aec4d4eae13d07bd860267927320521a1f4f1c70e2475c07a78195557ad62",
+  "test_data": "Two disposable synthetic email accounts; removed in finally. No HealthKit data.",
+  "completed": [
+    "two verified email accounts, resend invalidation, proof replay, separate health and circle consent",
+    "HTTPS health, public field allowlists, real leaderboard, self and active circle; sharing withdrawn",
+    "refresh rotation/replay, captured password reset/replay, old access/refresh invalid, consent remains withdrawn",
+    "logout revokes access/refresh; new password re-login works; other account retained"
+  ],
+  "health": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "max_steps": 1000000,
+    "status": "ok",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai"
+  },
+  "leaderboard": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "items": [
+      {
+        "floor": 9,
+        "is_me": false,
+        "nickname": "邮箱交付自检2",
+        "position": 1,
+        "rank": 1,
+        "remaining_steps": 1,
+        "steps": 999,
+        "user_id": "297c5f1520294c3b866737627a5699e4"
+      },
+      {
+        "floor": 1,
+        "is_me": true,
+        "nickname": "邮箱交付自检1",
+        "position": 2,
+        "rank": 2,
+        "remaining_steps": 99,
+        "steps": 101,
+        "user_id": "9632dc37b7514270aa7fc6f1f3b985bd"
+      }
+    ],
+    "limit": 100,
+    "max_steps": 1000000,
+    "next_cursor": null,
+    "snapshot": "2026-11-15.30",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 2
+  },
+  "circles": {
+    "circle": {
+      "band_steps": 1000,
+      "date": "2026-11-15",
+      "id": "2026-11-15:0-999",
+      "max_steps": 999,
+      "min_steps": 0
+    },
+    "circle_band_steps": 1000,
+    "consent_revision": 2,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "items": [
+      {
+        "floor": 9,
+        "is_me": false,
+        "nickname": "邮箱交付自检2",
+        "position": 1,
+        "remaining_steps": 1,
+        "steps": 999,
+        "user_id": "297c5f1520294c3b866737627a5699e4"
+      },
+      {
+        "floor": 1,
+        "is_me": true,
+        "nickname": "邮箱交付自检1",
+        "position": 2,
+        "remaining_steps": 99,
+        "steps": 101,
+        "user_id": "9632dc37b7514270aa7fc6f1f3b985bd"
+      }
+    ],
+    "limit": 100,
+    "max_steps": 1000000,
+    "next_cursor": null,
+    "participating": true,
+    "snapshot": "2026-11-15.30",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 2
+  },
+  "me": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "entry": {
+      "floor": 1,
+      "is_me": true,
+      "nickname": "邮箱交付自检1",
+      "position": 2,
+      "rank": 2,
+      "remaining_steps": 99,
+      "steps": 101,
+      "user_id": "9632dc37b7514270aa7fc6f1f3b985bd"
+    },
+    "limit": 1,
+    "max_steps": 1000000,
+    "page_cursor": "WyIyMDI2LTExLTE1LjMwIiwxLDFd",
+    "snapshot": "2026-11-15.30",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 2
+  },
+  "accounts_deleted": 2
+}
+
+exit_status=0
+
+COMMAND: curl --fail --silent --show-error --cacert /home/skn/code/stairclimb/.runtime/delivery/tls/ca.pem https://127.0.0.1:8787/health
+{"circle_band_steps":1000,"date":"2026-11-15","day_end":"2026-11-16T00:00:00+08:00","day_start":"2026-11-15T00:00:00+08:00","max_steps":1000000,"status":"ok","steps_per_floor":100,"timezone":"Asia/Shanghai"}
+exit_status=0
+
+COMMAND: Python live identity/digest and task-PostgreSQL read-only row-count check (scripts.local_service, scripts.postgres_dev)
+{
+  "verification": "Live process identities, executable and backend source digests match; receipt probe matches current source",
+  "rust_pid": 1521357,
+  "smtp_pid": 1521354,
+  "address": "https://127.0.0.1:8787",
+  "binary": "/home/skn/code/stairclimb/backend/target/debug/stairclimb-server",
+  "binary_sha256": "dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91",
+  "backend_sources_matched": 15,
+  "database": {
+    "container": "stairclimb-pg-fe5e36b647",
+    "host": "127.0.0.1",
+    "port": 32807,
+    "database": "stairclimb",
+    "image": "postgres:17-bookworm",
+    "schema": "public"
+  },
+  "migrations": [
+    1,
+    2,
+    3
+  ],
+  "post_probe_row_counts": {
+    "users": 0,
+    "email_accounts": 0,
+    "sessions": 0,
+    "email_credentials": 0,
+    "daily_steps": 0,
+    "circle_participation": 0
+  },
+  "ca_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/ca.pem",
+  "tls_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/server.pem",
+  "tls_key_path_only": "/home/skn/code/stairclimb/.runtime/delivery/tls/server-key.pem",
+  "server_log": "/home/skn/code/stairclimb/.runtime/delivery/server.log",
+  "smtp_log": "/home/skn/code/stairclimb/.runtime/delivery/smtp.log",
+  "stop_service": "python3 scripts/local_service.py stop",
+  "stop_database": "python3 scripts/postgres_dev.py stop"
+}
+exit_status=0

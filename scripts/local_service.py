@@ -370,6 +370,161 @@ class LocalService:
                 raise ServiceError('Probe account cleanup failed; inspect private runtime state')
             return result
 
+    def check_email_auth(self):
+        """Full authentication lifecycle on the persistent production HTTPS process."""
+        with self.locked():
+            receipt = self.directory / 'email-probe.json'
+            receipt.unlink(missing_ok=True)
+            state = self.status()
+            request = lambda method, path, body=None, token=None, expected=200: self.request(state, method, path, body, token, expected)
+            result = {'status': 'failed', 'checked_at': now(), 'address': state['address'],
+                      'rust_pid': state['processes']['rust']['pid'], 'binary_sha256': state['binary_sha256'],
+                      'backend_build_source_version': state['source_version'],
+                      'source_version': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+                      'probe_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                      'test_data': 'Two disposable synthetic email accounts; removed in finally. No HealthKit data.',
+                      'completed': []}
+            accounts = []  # Password candidates and sessions stay in memory, including after a lost response.
+
+            def require(condition, message):
+                if not condition:
+                    raise ServiceError(message)
+
+            def proof(account):
+                # UUID filenames are unordered. Resend/reset must use the newest captured message.
+                paths = sorted((self.directory / 'mail').glob('*.eml'), key=lambda path: path.stat().st_mtime_ns, reverse=True)
+                for path in paths:
+                    mail = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+                    if str(mail['To']) == account['email']:
+                        tokens = re.findall(r'(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])', mail.get_content())
+                        require(len(tokens) == 1, 'Captured email did not contain one proof')
+                        return tokens[0]
+                raise ServiceError('Proof not found in the private local capture')
+
+            def login(account, password):
+                session = request('POST', '/v1/auth/login', {'email': account['email'], 'password': password})
+                account.update(token=session['token'], refresh=session['refresh_token'], id=session['user']['id'])
+                return session
+
+            def refused(method, path, body=None, token=None, expected=401, code='unauthorized'):
+                require(request(method, path, body, token, expected)['error']['code'] == code,
+                        'Authentication or privacy failure returned an unexpected error')
+
+            def public_page(path, token, fields):
+                page = request('GET', path, token=token)
+                require(all(set(item) == fields for item in page['items']), 'Public model exposed unexpected fields')
+                return page
+
+            def recover_session(account):
+                if account.get('token'):
+                    try:
+                        return request('GET', '/v1/me', token=account['token'])['user']
+                    except Exception:
+                        pass  # A refresh, reset or logout may have committed before its response was lost.
+                for password in account['passwords']:
+                    try:
+                        return login(account, password)['user']
+                    except Exception:
+                        pass
+                # Registration or verification may have lost its response before the first login.
+                request('POST', '/v1/auth/verify', {'token': proof(account), 'password': account['passwords'][-1]})
+                return login(account, account['passwords'][-1])['user']
+
+            try:
+                require(all(hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest
+                            for path, digest in state['backend_sources'].items()), 'Running backend sources changed; restart before checking')
+                require(hashlib.sha256(Path(f'/proc/{result["rust_pid"]}/exe').read_bytes()).hexdigest() == state['binary_sha256'],
+                        'Running executable differs from the recorded Rust build')
+                result['health'] = request('GET', '/health')
+                date = result['health']['date']
+                for index in range(2):
+                    account = {'email': 'email-delivery-' + secrets.token_hex(12) + '@example.test',
+                               'passwords': [secrets.token_urlsafe(32)]}
+                    accounts.append(account)
+                    password = account['passwords'][0]
+                    request('POST', '/v1/auth/register', {'email': account['email'], 'password': password,
+                                                         'nickname': f'邮箱交付自检{index + 1}'}, expected=202)
+                    original = proof(account)
+                    refused('POST', '/v1/auth/login', {'email': account['email'], 'password': password},
+                            code='authentication_failed')
+                    if index == 0:
+                        request('POST', '/v1/auth/resend', {'email': account['email']}, expected=202)
+                        require(proof(account) != original, 'Resend did not issue a new captured proof')
+                        refused('POST', '/v1/auth/verify', {'token': original, 'password': password},
+                                expected=400, code='invalid_credential')
+                    current = proof(account)
+                    require(request('POST', '/v1/auth/verify', {'token': current, 'password': password})['completed'],
+                            'Email verification was not confirmed')
+                    refused('POST', '/v1/auth/verify', {'token': current, 'password': password},
+                            expected=400, code='invalid_credential')
+                    session = login(account, password)
+                    require(not session['user']['sharing_enabled'] and 'email' not in session['user'],
+                            'Email activation changed health consent or exposed email')
+                    require(request('GET', '/v1/auth/account', token=account['token'])['email'] == account['email'],
+                            'Private account email did not match')
+                    require(not request('GET', '/v1/circles/current', token=account['token'])['participating'],
+                            'Email activation implicitly joined a circle')
+                    refused('PUT', '/v1/me/steps', {'date': date, 'steps': 101, 'expected_revision': 0}, account['token'],
+                            403, 'sharing_required')
+                    request('PUT', '/v1/me/sharing', {'enabled': True, 'expected_revision': 0}, account['token'])
+                    request('PUT', '/v1/me/circle-participation', {'enabled': True, 'expected_revision': 1}, account['token'])
+                    request('PUT', '/v1/me/steps', {'date': date, 'steps': [101, 999][index], 'expected_revision': 2}, account['token'])
+                result['completed'].append('two verified email accounts, resend invalidation, proof replay, separate health and circle consent')
+                a, b = accounts
+                fields = {'user_id', 'nickname', 'steps', 'floor', 'remaining_steps', 'position', 'is_me'}
+                result['leaderboard'] = public_page('/v1/leaderboard?limit=100', a['token'], fields | {'rank'})
+                result['circles'] = public_page('/v1/circles/current/members?limit=100', a['token'], fields)
+                result['me'] = request('GET', '/v1/leaderboard/me?limit=1', token=a['token'])
+                require(result['me']['entry']['is_me'] and result['me']['entry']['steps'] == 101
+                        and result['circles']['circle']['id'] == date + ':0-999', 'Unexpected real leaderboard or circle')
+                request('PUT', '/v1/me/sharing', {'enabled': False, 'expected_revision': 2}, a['token'])
+                result['completed'].append('HTTPS health, public field allowlists, real leaderboard, self and active circle; sharing withdrawn')
+
+                old_token, old_refresh = a['token'], a['refresh']
+                rotated = request('POST', '/v1/auth/refresh', {'refresh_token': old_refresh})
+                a.update(token=rotated['token'], refresh=rotated['refresh_token'])
+                refused('GET', '/v1/me', token=old_token)
+                refused('POST', '/v1/auth/refresh', {'refresh_token': old_refresh}, code='authentication_failed')
+                request('POST', '/v1/auth/forgot-password', {'email': a['email']}, expected=202)
+                reset_proof = proof(a)
+                # Retain both possibilities before sending: reset can commit even if its response is lost.
+                a['passwords'].insert(0, secrets.token_urlsafe(32))
+                require(request('POST', '/v1/auth/reset-password', {'token': reset_proof, 'password': a['passwords'][0]})['completed'],
+                        'Password reset was not confirmed')
+                refused('GET', '/v1/me', token=a['token'])
+                refused('POST', '/v1/auth/refresh', {'refresh_token': a['refresh']}, code='authentication_failed')
+                refused('POST', '/v1/auth/reset-password', {'token': reset_proof, 'password': a['passwords'][0]},
+                        expected=400, code='invalid_credential')
+                session = login(a, a['passwords'][0])
+                require(not session['user']['sharing_enabled']
+                        and not request('GET', '/v1/circles/current', token=a['token'])['participating'],
+                        'Password recovery reopened sharing or circle participation')
+                require(request('GET', '/v1/me', token=b['token'])['user']['id'] == b['id'],
+                        'Password reset changed another account')
+                result['completed'].append('refresh rotation/replay, captured password reset/replay, old access/refresh invalid, consent remains withdrawn')
+
+                request('POST', '/v1/auth/logout', {}, a['token'])
+                refused('GET', '/v1/me', token=a['token'])
+                refused('POST', '/v1/auth/refresh', {'refresh_token': a['refresh']}, code='authentication_failed')
+                login(a, a['passwords'][0])
+                result['completed'].append('logout revokes access/refresh; new password re-login works; other account retained')
+                result['status'] = 'passed'
+            finally:
+                deleted = 0
+                for account in accounts:
+                    try:
+                        user = recover_session(account)
+                        request('DELETE', '/v1/me', {'expected_revision': user['consent_revision']}, account['token'])
+                        refused('GET', '/v1/me', token=account['token'])
+                        refused('POST', '/v1/auth/refresh', {'refresh_token': account['refresh']}, code='authentication_failed')
+                        deleted += 1
+                    except Exception:
+                        result['status'] = 'failed_cleanup'
+                result['accounts_deleted'] = deleted
+                save(receipt, result)
+            require(deleted == len(accounts), 'Email probe account cleanup failed; inspect private runtime state')
+            return result
+
     def check_circles(self):
         """Exercise active circles without changing any pre-existing user's data."""
         with self.locked():
@@ -531,7 +686,7 @@ def capture(directory):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['start', 'status', 'check', 'check-circles', 'stop', '_capture'])
+    parser.add_argument('action', choices=['start', 'status', 'check', 'check-circles', 'check-email-auth', 'stop', '_capture'])
     parser.add_argument('--directory', type=Path, default=DEFAULT)
     parser.add_argument('--port', type=int, default=8787)
     args = parser.parse_args()

@@ -1,6 +1,6 @@
 # 本地持续运行交付
 
-需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。原模块定义和历史日志保留。本文保留已接受的 `delivery_validation` 运行入口，本轮补齐 `circles_delivery`；邮箱最终集成交付仍按台账继续，整体需求不在本次宣称完成。
+需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。原模块定义和历史日志保留。基础与圈子运行交付已接受，本轮补齐 `email_auth_delivery`，提交独立复核；本次为模块结论，整体需求的最终接受由reviewer和Watcher另行确认。
 
 ## 启动、检查与停止
 
@@ -54,6 +54,36 @@ python3 -m unittest backend.tests.test_circle_delivery -v
 每天以Asia/Shanghai 00:00派生当日零值和新频道，1000步一个区间，同组即同日频道；历史记录保留，不改写为0，不清除Apple Health原始记录。旧日上传及游标被拒；小圈展示真实成员，不虚构圈友。接口、同意与退出/删除规则继续遵循[API文档](API.md#每日圈子与参与隐私)。午夜和503场景只在隔离测试实例上验证，不修改持续实例的时钟或数据库结构。
 
 本轮源码基线为 `ffeb0fadfe80c609adce6682f55dac10daf28124` 加圈子交付增量；后端Rust、数据库迁移及iOS源码保持原样。聚焦测试和真实HTTPS圈子探针日志见 `docs/validation/circles-delivery-focused.txt`，一次相关回归及Linux工程检查见 `circles-delivery-regression.txt`，持续实例实际请求和停止方式见 `circles-delivery-running.txt`。旧 `delivery-*` 和原生圈子证据原样保留；三个固定命令仍由Watcher对本候选运行，不冒称本轮已独立接受。
+
+## 邮箱与HTTPS最终集成自检
+
+```sh
+python3 scripts/local_service.py check-email-auth
+python3 -m unittest backend.tests.test_email_delivery -v
+```
+
+`check-email-auth` 在同一持续运行的**正式Rust HTTPS实例**上创建两个明确标为“邮箱交付自检”的临时账号，只向本地捕获器发信。实际读取捕获证明，验证重发使旧证明失效、未验证不能登录、一次验证不能重放；登录后检查邮箱仅本人账号接口可见，且没有默认共享或参加圈子。然后分别主动同意、同步101/999步，真实请求健康、排行榜、本人及圈友，并对公开成员字段作允许清单检查。
+
+随后撤回第一个账号的共享，验证刷新轮换使旧access/refresh失效、捕获找回邮件并重置密码、旧会话与重置证明不能重放、新密码登录没有恢复共享或参加、退出使当前会话失效及重新登录可用；第二个账号的身份及会话保持有效。最终删除两账号并核对access/refresh失效，不留下假榜单。探针不重启持续服务、不调整其时钟、不改已有账号。执行中跨日、并发榜单变更及服务器限流会如实失败；不要连续高频运行或与其他自检同时执行。限流、过期和故障用隔离实例测试，不在持续实例上绕过限流或人为断库。
+
+结果位于权限600的 `.runtime/delivery/email-probe.json`，含健康/排行榜/真实圈友响应、已完成阶段、实际删除数、当前源码基线、探针SHA-256、Rust PID/二进制摘要及原后端构建版本。旧收据在重跑前移除；错误保留 `failed`，清理未完成标为 `failed_cleanup`，命令返回非零。密码、邮件证明及全部会话仅保存在探针内存中，不进入收据或日志。重发和找回使用最新捕获文件；密码重置发送前同时保留新旧密码候选，发生响应丢失时先确认现有会话，必要时重新登录以删除测试账号。SMTP或数据库仍不可用时只能记录清理失败，不冒称已删除。
+
+本轮基线为 `14c8aaad544865745ddcf896dd9fc0177584c8b0` 加邮箱交付增量，后端业务、迁移、iOS及既有测试保持不变。聚焦4项真实Rust/PostgreSQL/HTTPS/SMTP回归通过，覆盖既有数据保留、全部邮件证明不泄露、重发/重置响应丢失后清理，以及删除失败不能报告成功。真实持续实例自检退出0、删除2个账号，证据为 `docs/validation/email-delivery-focused.txt` 和 `email-delivery-running.txt`。实例沿用Rust PID1521357、SMTP PID1521354、HTTPS 8787及PostgreSQL端口32807；15项后端输入摘要及运行中可执行文件实际匹配，未为报告更新而重启已验证服务。停止方法和证书路径仍见上文。
+
+邮箱交付的集成覆盖由当前检查和未变的历史证据共同支持：
+
+| 验收范围 | 实际入口及证据 |
+| --- | --- |
+| 邮箱生命周期、SMTP失败、过期、重放、限流和枚举保护、Argon2id、旧身份绑定、账号/会话清理 | `backend/tests/test_email_auth.py`；本轮相关回归 `docs/validation/email-delivery-regression.txt` |
+| 可信HTTPS成功，错误CA/域名/过期证书、明文及降级拒绝，公开模型隐私 | `backend/tests/test_https.py`；同一相关回归 |
+| 原数据导入、非空目标保护、重启保留凭证/同意/历史，既有运行及圈子探针不变 | `backend/tests/test_migration.py`、`test_delivery.py`、`test_circle_delivery.py`；同一相关回归 |
+| 三个邮箱用户真实HTTPS、完整分页/本人、上海午夜、共享屏障、删除、重启、503、SMTP失败 | `python3 scripts/verify_ios_api.py`；`docs/validation/email-delivery-integration.txt` |
+| 连接池/数据库分页、Swift成功时间与缓存、HealthKit/Keychain及Mac执行入口 | `pool-timing-sources.sha256`、`ios-freshness-sources.sha256`、`apple-entry-sources.sha256` 中分别31/75/6项未变输入匹配，仅README按本模块更新；现有实验与平台限制继续有效 |
+| 实际工程关联、中文隐私、严格HTTPS和Apple入口编排 | `python3 scripts/check_ios_project.py` 退出0；`scripts.tests.test_ios_project` 与 `scripts.tests.test_apple_validation` 纳入本轮同一相关回归 |
+
+一次相关回归命令为 `python3 -m unittest backend.tests.test_email_auth backend.tests.test_https backend.tests.test_migration backend.tests.test_delivery backend.tests.test_circle_delivery scripts.tests.test_ios_project scripts.tests.test_apple_validation -v`：102项通过，193.174秒，退出0。三用户HTTPS契约检查同样退出0。聚焦4项通过后没有重复全仓固定发现；现有Mac入口编排测试在Linux使用替身工具，不能证明Swift或XCTest已经运行。
+
+三个固定命令原样保留，由Watcher对候选执行；第34轮已接受的120项Python、18项Rust及格式检查记录保持原样。本轮不重复整套固定发现，也不冒称Watcher已接受本增量。Swift编译、XCTest、签名、系统信任、真机HealthKit及视觉交互仍需Mac/iPhone；这是既有平台限制，不由Linux测试替代。不向真实第三方邮箱发信、不修改监督器、不部署公网、不购买服务。
 
 ## 连接与证书
 
