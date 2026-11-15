@@ -1,0 +1,14 @@
+$ python3 -m unittest backend.tests.test_identity.IdentityHTTPTests.test_body_limits_content_type_and_transfer_encoding backend.tests.test_identity.IdentityHTTPTests.test_concurrent_consent_changes_are_serialized backend.tests.test_social.SocialHTTPTests.test_concurrent_duplicate_uploads_keep_one_snapshot backend.tests.test_social.SocialHTTPTests.test_concurrent_privacy_operations_win_over_inflight_uploads backend.tests.test_circles.CirclesHTTPTests.test_concurrent_participation_upload_and_privacy_changes_are_serialized backend.tests.test_circles.CirclesHTTPTests.test_pending_upload_over_midnight_cannot_move_into_new_day_channel -v
+test_body_limits_content_type_and_transfer_encoding (backend.tests.test_identity.IdentityHTTPTests.test_body_limits_content_type_and_transfer_encoding) ... ok
+test_concurrent_consent_changes_are_serialized (backend.tests.test_identity.IdentityHTTPTests.test_concurrent_consent_changes_are_serialized) ... ok
+test_concurrent_duplicate_uploads_keep_one_snapshot (backend.tests.test_social.SocialHTTPTests.test_concurrent_duplicate_uploads_keep_one_snapshot) ... ok
+test_concurrent_privacy_operations_win_over_inflight_uploads (backend.tests.test_social.SocialHTTPTests.test_concurrent_privacy_operations_win_over_inflight_uploads) ... ok
+test_concurrent_participation_upload_and_privacy_changes_are_serialized (backend.tests.test_circles.CirclesHTTPTests.test_concurrent_participation_upload_and_privacy_changes_are_serialized) ... ok
+test_pending_upload_over_midnight_cannot_move_into_new_day_channel (backend.tests.test_circles.CirclesHTTPTests.test_pending_upload_over_midnight_cannot_move_into_new_day_channel) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 7.080s
+
+OK
+
+exit_status=0

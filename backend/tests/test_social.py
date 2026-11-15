@@ -4,7 +4,6 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
-import sqlite3
 import threading
 import unittest
 from urllib.parse import urlencode
@@ -72,7 +71,7 @@ class SocialHTTPTests(unittest.TestCase):
                 own = self.locate(first)["entry"]
                 self.assertEqual((own["steps"], own["floor"]), (steps, floor))
         self.assertEqual(self.today(second)["progress"]["steps"], 340)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps").fetchone()[0], 2)
 
     def test_duplicate_sync_does_not_add_change_timestamp_or_invalidate_pages(self):
@@ -274,28 +273,19 @@ class SocialHTTPTests(unittest.TestCase):
         }), token=first["token"]), 409, "leaderboard_changed")
         self.assertEqual(self.sync(first, 99)[0], 200)
         self.assertEqual(self.locate(first)["entry"]["steps"], 99)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps").fetchone()[0], 3)
 
     def test_upload_waiting_for_write_lock_rechecks_date_after_midnight(self):
         self.now = datetime(2026, 11, 14, 15, 59, 59, tzinfo=timezone.utc)
         user = self.register()
         self.share(user)
-        first_sample = threading.Event()
-        def clock():
-            sample = self.now
-            first_sample.set()
-            return sample
-        self.server.application.clock = clock
-        with sqlite3.connect(self.database) as blocker, ThreadPoolExecutor(max_workers=1) as pool:
-            blocker.execute("BEGIN IMMEDIATE")
+        with ThreadPoolExecutor(max_workers=1) as pool, self.database.write_lock():
             future = pool.submit(self.sync, user, 900, 1, "2026-11-14")
-            try:
-                self.assertTrue(first_sample.wait(timeout=2))
-                self.now += timedelta(seconds=1)
-            finally:
-                blocker.commit()
-            self.assert_error(future.result(timeout=3), 409, "day_changed")
+            self.database.wait_for_blocked_writer()
+            self.now += timedelta(seconds=1)
+            self.server.set_time(self.now)
+        self.assert_error(future.result(timeout=3), 409, "day_changed")
         self.assertFalse(self.today(user)["progress"]["synced"])
 
     def test_revocation_hides_record_blocks_replays_and_survives_restart(self):
@@ -397,7 +387,7 @@ class SocialHTTPTests(unittest.TestCase):
             self.assertEqual(self.locate(second)["entry"]["user_id"], second["user"]["id"])
         self.now -= timedelta(days=1)
         self.assertEqual(self.today(second)["progress"]["steps"], 101)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps").fetchone()[0], 1)
         replacement = self.register("A")
@@ -411,7 +401,7 @@ class SocialHTTPTests(unittest.TestCase):
         self.assertEqual([status for status, _ in results], [200] * 8)
         self.assertEqual(len({result["progress"]["updated_at"] for _, result in results}), 1)
         self.assertEqual(self.today(user)["progress"]["steps"], 234)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps").fetchone()[0], 1)
 
     def test_concurrent_privacy_operations_win_over_inflight_uploads(self):
@@ -466,10 +456,11 @@ class SocialHTTPTests(unittest.TestCase):
         user = self.register("保留旧模块")
         self.share(user)
         self.stop_server()
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             # The accepted identity module has these same users/metadata tables,
             # but no daily_steps table. Simulate that exact additive upgrade.
             db.execute("DROP TABLE daily_steps")
+            db.execute("DROP TABLE schema_migrations")
         self.start_server()
         status, profile = self.request("GET", "/v1/me", token=user["token"])
         self.assertEqual(status, 200)
@@ -482,10 +473,7 @@ class SocialHTTPTests(unittest.TestCase):
         user = self.register()
         self.share(user)
         self.assertEqual(self.sync(user, 123)[0], 200)
-        moved = self.database.with_suffix(".offline")
-        self.database.rename(moved)
-        self.database.mkdir()
-        try:
+        with self.database.outage():
             for method, path, body in [
                 ("PUT", "/v1/me/steps", {"date": "2026-11-14", "steps": 999, "expected_revision": 1}),
                 ("DELETE", "/v1/me/steps", {"expected_revision": 1}),
@@ -496,9 +484,7 @@ class SocialHTTPTests(unittest.TestCase):
                                           503, "storage_unavailable")
                 self.assertNotIn(str(self.database), json.dumps(error))
                 self.assertNotIn("sqlite", json.dumps(error))
-        finally:
-            self.database.rmdir()
-            moved.rename(self.database)
+
         self.assertEqual(self.today(user)["progress"]["steps"], 123)
         status, profile = self.request("GET", "/v1/me", token=user["token"])
         self.assertEqual(status, 200)

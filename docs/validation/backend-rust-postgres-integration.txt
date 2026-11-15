@@ -1,0 +1,52 @@
+$ python3 scripts/verify_ios_api.py
+PASS real HTTP: 3 independent users, explicit consent, cumulative/idempotent upload, 3-page traversal, non-first-page me, rename/invalidation, no-record zero, identity tampering
+PASS real HTTP: Shanghai midnight, new-day zero, old-date rejection, revoke barrier, delayed enable/upload refusal
+PASS real HTTP: delete all shared days, close sharing, stale-delete refusal, delete account/credential invalidation, restart persistence
+PASS real HTTP: service storage outage returns 503; no success fabrication
+CLEANUP: ephemeral server ports closed and isolated PostgreSQL schema removed; no tokens printed or saved
+LIMIT: verifies real server contracts used by iOS; does not execute URLSession, SwiftUI, Swift tests, or HealthKit
+exit_status=0
+
+$ python3 scripts/check_ios_project.py
+PASS project reference graph: 91 objects; 16 app + 6 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS Debug local-only ATS and Release default HTTPS; associated xcconfig/plists
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+exit_status=0
+
+$ python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+test_debug_arbitrary_loads_are_still_rejected (test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_local_key_alone_is_rejected (test_ios_project.IOSProjectChecks.test_debug_legacy_local_key_alone_is_rejected) ... ok
+test_debug_local_ip_coverage_and_public_exclusion (test_ios_project.IOSProjectChecks.test_debug_local_ip_coverage_and_public_exclusion) ... ok
+test_debug_missing_each_ip_range_is_rejected (test_ios_project.IOSProjectChecks.test_debug_missing_each_ip_range_is_rejected) ... ok
+test_debug_missing_http_permission_or_extra_tls_relaxation_rejected (test_ios_project.IOSProjectChecks.test_debug_missing_http_permission_or_extra_tls_relaxation_rejected) ... ok
+test_debug_public_or_wildcard_exceptions_are_rejected (test_ios_project.IOSProjectChecks.test_debug_public_or_wildcard_exceptions_are_rejected) ... ok
+test_disabled_capability (test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_missing_entitlement (test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_icon (test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_openstep_duplicate_key_rejected (test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_release_ats_bypass (test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_cannot_inherit_debug_ip_exceptions (test_ios_project.IOSProjectChecks.test_release_cannot_inherit_debug_ip_exceptions) ... ok
+test_release_local_exception_is_also_rejected (test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_test_target_has_no_app_dependency (test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_unlinked_source (test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_valid_project (test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.264s
+
+OK
+exit_status=0
+
+$ git diff --check
+exit_status=0
+

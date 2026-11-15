@@ -1,0 +1,165 @@
+import Foundation
+
+struct ServerUser: Codable, Equatable {
+    let id: String
+    let nickname: String
+    let sharingEnabled: Bool
+    let consentRevision: Int
+}
+
+struct ServerProgress: Decodable {
+    let steps: Int
+    let floor: Int
+    let remainingSteps: Int
+    let synced: Bool
+    let updatedAt: String?
+}
+
+struct LeaderboardEntry: Decodable, Identifiable, Equatable {
+    let userId: String
+    let nickname: String
+    let steps: Int
+    let floor: Int
+    let remainingSteps: Int
+    let rank: Int?
+    let position: Int
+    let isMe: Bool
+    var id: String { userId }
+}
+
+struct APIEnvelope: Decodable {
+    let date: String
+    let timezone: String
+    let dayStart: String
+    let dayEnd: String
+    let stepsPerFloor: Int
+    let maxSteps: Int
+    let circleBandSteps: Int
+    let token: String?
+    let user: ServerUser?
+    let progress: ServerProgress?
+    let consentRevision: Int?
+    let items: [LeaderboardEntry]?
+    let entry: LeaderboardEntry?
+    let total: Int?
+    let limit: Int?
+    let snapshot: String?
+    let nextCursor: String?
+    let pageCursor: String?
+    let deleted: Bool?
+    let deletedDays: Int?
+    let participating: Bool?
+    let circle: CircleChannel?
+
+    func validateRules() throws {
+        guard timezone == ShanghaiDay.timeZoneID, stepsPerFloor == StepRules.stepsPerFloor,
+              maxSteps == StepRules.maximumSteps, circleBandSteps == StepRules.circleBandSteps,
+              let start = ISO8601DateFormatter().date(from: dayStart),
+              let end = ISO8601DateFormatter().date(from: dayEnd) else { throw NetworkFailure.response }
+        let day = ShanghaiDay(containing: start)
+        guard day.date == date, day.start == start, day.end == end else { throw NetworkFailure.response }
+    }
+}
+
+enum NetworkFailure: Error, LocalizedError, Equatable {
+    case address, response, transport, unauthorized, dayChanged, pageChanged, consentChanged
+    case server(String)
+    case localData, storage, pendingPrivacy
+
+    var errorDescription: String? {
+        switch self {
+        case .address: "请输入HTTPS服务根地址；Debug仅支持本机、.local或私有局域网HTTP，不能包含账号、路径、查询或片段。"
+        case .response: "服务器返回不兼容的数据或规则，未视作操作成功。"
+        case .transport: "网络不可用、超时或连接失败。请检查地址与网络后重试；未视作操作成功。"
+        case .unauthorized: "账号凭证已失效。已停止上传，不会自动创建替代账号。"
+        case .dayChanged: "上海日期与服务器不一致或已跨日。旧值已清除，请检查设备时间，再重新读取并同步。"
+        case .pageChanged: "日期或榜单已变化，旧页已清除。请从首页刷新。"
+        case .consentChanged: "共享版本已变化。已停止本机上传，请刷新资料；重新开启仍需主动同意。"
+        case .server: "服务暂不可用或请求未被接受，请稍后刷新确认。"
+        case .localData: "没有本次成功读取的当日步数。暂无可读数据或读取失败时不上传零值，请先检查健康权限并重试。"
+        case .storage: "安全存储未完成。已停止网络操作，请解锁设备后重试安全存储。"
+        case .pendingPrivacy: "隐私操作尚待服务器确认，本机已停止上传。请完成或重新确认该操作。"
+        }
+    }
+}
+
+struct APIRequest {
+    let method: String
+    let path: String
+    var body: [String: Any]? = nil
+    var query: [URLQueryItem] = []
+}
+
+@MainActor
+protocol APIRequesting {
+    func send(_ request: APIRequest, token: String?) async throws -> APIEnvelope
+}
+
+private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        // Never forward credentials or replay writes through a redirect.
+        completionHandler(nil)
+    }
+}
+
+@MainActor
+final class APIClient: APIRequesting {
+    private let baseURL: URL
+    private let session: URLSession
+
+    init(baseURL: URL, configuration: URLSessionConfiguration = .ephemeral) {
+        self.baseURL = baseURL
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 12
+        configuration.timeoutIntervalForResource = 20
+        configuration.waitsForConnectivity = false
+        session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+    }
+
+    deinit { session.invalidateAndCancel() }
+
+    func send(_ request: APIRequest, token: String?) async throws -> APIEnvelope {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.path = request.path
+        components.queryItems = request.query.isEmpty ? nil : request.query
+        guard let url = components.url else { throw NetworkFailure.address }
+        var outgoing = URLRequest(url: url)
+        outgoing.httpMethod = request.method
+        outgoing.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token { outgoing.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body = request.body {
+            outgoing.httpBody = try JSONSerialization.data(withJSONObject: body)
+            outgoing.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: outgoing) }
+        catch { throw NetworkFailure.transport }
+        guard let http = response as? HTTPURLResponse, data.count <= 1_048_576,
+              http.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("application/json") == true else {
+            throw NetworkFailure.response
+        }
+        if !(200...299).contains(http.statusCode) {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let code = (json?["error"] as? [String: Any])?["code"] as? String ?? "unknown"
+            if http.statusCode == 401 { throw NetworkFailure.unauthorized }
+            switch code {
+            case "day_changed": throw NetworkFailure.dayChanged
+            case "leaderboard_changed", "circle_changed": throw NetworkFailure.pageChanged
+            case "consent_changed", "sharing_required": throw NetworkFailure.consentChanged
+            default: throw NetworkFailure.server(code)
+            }
+        }
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let result = try decoder.decode(APIEnvelope.self, from: data)
+            try result.validateRules()
+            return result
+        } catch { throw NetworkFailure.response }
+    }
+}

@@ -2,9 +2,11 @@
 
 已实现健康接口、注册、本人资料、改名、共享同意/撤回、累计同步、真实分页排行榜、本人定位、全部共享步数删除、账号删除及每日运动圈子。圈子规则由追加需求决定，删除共享步数现在同时关闭共享与参与；早期验证记录保留当时契约，不代表现行删除行为。
 
+正式实现为 Rust＋PostgreSQL；启动时应用版本化SQL迁移。历史 Python/SQLite 日志仅作迁移前参考，HTTP契约保持兼容。
+
 ## 通用规则
 
-- 基础路径示例：`http://127.0.0.1:8787`（仅本地开发）。远程客户端应连接部署者提供的 HTTPS 反向代理；此标准库服务本身不终止 TLS，不应直接暴露公网。
+- 基础路径示例：`http://127.0.0.1:8787`（仅本地开发）。远程客户端应连接部署者提供的 HTTPS 反向代理；此 Rust 服务本身不终止 TLS，不应直接暴露公网。
 - JSON 请求须带 `Content-Type: application/json` 和单个有效 `Content-Length`。请求体上限 4096 字节，不接受 chunked。返回 JSON、`Cache-Control: no-store`，每次请求后关闭连接。
 - 除健康接口和注册外，用 `Authorization: Bearer <本机凭证>` 认证。注册返回的随机 256 位凭证仅返回一次；数据库只保存 SHA-256 摘要。凭证不得写入 URL、日志、源码或配置。注册默认不共享。
 - 仅排行榜及当前圈子 GET 接口接受下文列出的查询参数；其他接口拒绝查询参数。所有接口拒绝重复查询键和未定义字段。没有能指定他人 ID 的写接口；`user_id`、`id`、客户端计算的 `floor`、原始健康 `samples` 或来源设备等额外字段都被拒绝。
@@ -43,7 +45,7 @@
 
 ## 当日累计快照
 
-`date` 必须为真实存在的严格 YYYY-MM-DD 且等于服务器权威上海当日；非法格式或日期返回 `422 invalid_date`，合法的过去/未来日期返回 `409 day_changed` 并附新日界线。客户端应丢弃旧日待同步值，重新按返回的上海区间读取 HealthKit，不能仅替换旧请求的日期后重试。服务器在取得 SQLite 写锁后重新取时钟，排队跨午夜的请求也执行该规则；无 HTTP/CLI 改时后门。
+`date` 必须为真实存在的严格 YYYY-MM-DD 且等于服务器权威上海当日；非法格式或日期返回 `422 invalid_date`，合法的过去/未来日期返回 `409 day_changed` 并附新日界线。客户端应丢弃旧日待同步值，重新按返回的上海区间读取 HealthKit，不能仅替换旧请求的日期后重试。服务器在取得 PostgreSQL 写锁后重新取时钟，排队跨午夜的请求也执行该规则；无 HTTP/CLI 改时后门。
 
 `expected_revision` 不匹配返回 `409 consent_changed`；匹配但未同意共享返回 `403 sharing_required`。`(user_id,date)` 是唯一主键，使用累计值**替换**已有值，绝不相加。HealthKit 修正后更小的合法快照也会替换；同版本的不同快照按服务器事务先后、最后一次成功写入为准。客户端应串行化同步，不在新值之后重试旧快照。重复相同快照不改变记录、`updated_at` 或榜单版本。
 
@@ -53,10 +55,10 @@
 
 注册后的任何已认证用户都可查看，无需先同意上传自己的健康汇总。仅 `sharing_enabled=true` 的账号公开；没有今日记录者以 0 步/0 层纳入总数，不隐藏未同步用户。
 
-`items` 是实际 SQLite 数据，每项为 `{user_id,nickname,steps,floor,remaining_steps,rank,position,is_me}`，不包含认证信息、共享版本或健康明细。按步数降序，步数相同按不可变 `user_id` 字典升序。`rank` 为竞赛名次，例如步数 500/200/200/0 对应 1/2/2/4；`position` 为稳定的 1/2/3/4 顺序，定位和分页使用 position。`is_me` 由认证身份计算。
+`items` 是实际 PostgreSQL 数据，每项为 `{user_id,nickname,steps,floor,remaining_steps,rank,position,is_me}`，不包含认证信息、共享版本或健康明细。按步数降序，步数相同按不可变 `user_id` 字典升序。`rank` 为竞赛名次，例如步数 500/200/200/0 对应 1/2/2/4；`position` 为稳定的 1/2/3/4 顺序，定位和分页使用 position。`is_me` 由认证身份计算。
 
 - `limit` 默认20，范围1～100，须为十进制整数。首页不传 cursor；使用返回的 `next_cursor` 继续并保持相同 limit，直到 `next_cursor:null`。例：`GET /v1/leaderboard?limit=2&cursor=<next_cursor>`。小容量可遍历全部可共享用户；无用户时 items=[]、total=0。
-- `snapshot` 标识「上海日期 + 持久榜单版本」。每页的认证、版本、总数和排名在同一个 SQLite 读事务快照中计算。步数实际变化、改名、共享变化、隐私删除均使旧游标失效；跨日也失效。返回 `409 leaderboard_changed` 时清空已收集页面并重新请求首页，不能将不同 snapshot 的页拼在一起。相同快照重复同步不会使分页失效。持续变化期间可能需多次刷新，MVP 不保留历史公开快照。
+- `snapshot` 标识「上海日期 + 持久榜单版本」。每页的认证、版本、总数和排名在同一个 PostgreSQL 读事务快照中计算。步数实际变化、改名、共享变化、隐私删除均使旧游标失效；跨日也失效。返回 `409 leaderboard_changed` 时清空已收集页面并重新请求首页，不能将不同 snapshot 的页拼在一起。相同快照重复同步不会使分页失效。持续变化期间可能需多次刷新，MVP 不保留历史公开快照。
 - `GET /v1/leaderboard/me?limit=2` 返回本人 entry 和所属页的 `page_cursor`，即使本人不在首页。可选传当前榜单的 `snapshot` 以要求一致版本，过期返回409。用同样 limit 和 page_cursor 请求 `/v1/leaderboard` 即到本人所在页（包括第一页）；page_cursor 不是下一页游标。
 - 未共享/已撤回者的本人定位返回 `entry:null,page_cursor:null`，不将该用户强行公开。游标是无凭证的只读继续标记，不是身份授权；缺损、越界或改页容量返回 `422 invalid_cursor`。未知/重复查询参数返回400。
 
@@ -72,13 +74,13 @@
 
 ## 每日圈子与参与隐私
 
-圈子默认区间宽度集中定义于 `backend/domain.py:CIRCLE_BAND_STEPS=1000`，不是地理位置、随机或好友分组。同组=同圈子=同日频道。标识例如 `2026-11-14:0-999`、`2026-11-14:1000-1999`。最大合法步数1000000落在1000000–1000999区间，但仍拒绝超过1000000的步数；区间标签不改变步数上限。
+圈子默认区间宽度集中定义于 `backend/src/domain.rs:CIRCLE_BAND_STEPS=1000`，不是地理位置、随机或好友分组。同组=同圈子=同日频道。标识例如 `2026-11-14:0-999`、`2026-11-14:1000-1999`。最大合法步数1000000落在1000000–1000999区间，但仍拒绝超过1000000的步数；区间标签不改变步数上限。
 
 注册和旧共享账号默认不参加圈子。客户端必须先明确告知“按每日步数区间匹配，昵称、当日汇总步数及虚拟楼层将被圈友看到”，让用户主动选择。`PUT /v1/me/circle-participation` 开启须已有有效共享同意，且匹配当前 `consent_revision`；缺少同意403，版本过期409。实际开启推进版本；同版本重复开启幂等。关闭参与**同时关闭健康汇总共享**，每次关闭均推进持久版本，包括已关闭时，以阻断延迟开启与上传；撤回共享也清除圈子参与。用户可以再次主动只开启排行榜共享，但不会自动恢复圈子；圈子必须再单独主动同意。客户端不能自动重试开启意图。
 
 所有圈子 GET 均须身份凭证。未参加者返回 `participating:false,circle:null,total:0,items:[],entry:null,page_cursor:null,next_cursor:null`，不会公开自身或得到圈友名单；已参加者只取当日所属频道。试图提交其他日期、channel或user_id查询参数均400，不能通过客户端指定圈子或写入人数。共享但没有今日记录的参与者按0步进入0–999圈。
 
-当前圈子和本人定位响应为 `{participating:true,circle,total,entry,page_cursor,limit,snapshot,consent_revision,...规则}`。`circle` 为 `{id,date,min_steps,max_steps,band_steps}`；`entry` 和圈友项为 `{user_id,nickname,steps,floor,remaining_steps,position,is_me}`，按步数降序、用户ID升序稳定排序。`total` 是频道当前真实人数；单人圈直接显示一人，不凑人数。摘要与成员读取在一个SQLite读事务快照内完成。未参加时人数为0；正常参加者含本人，至少一人。
+当前圈子和本人定位响应为 `{participating:true,circle,total,entry,page_cursor,limit,snapshot,consent_revision,...规则}`。`circle` 为 `{id,date,min_steps,max_steps,band_steps}`；`entry` 和圈友项为 `{user_id,nickname,steps,floor,remaining_steps,position,is_me}`，按步数降序、用户ID升序稳定排序。`total` 是频道当前真实人数；单人圈直接显示一人，不凑人数。摘要与成员读取在一个PostgreSQL REPEATABLE READ读事务快照内完成。未参加时人数为0；正常参加者含本人，至少一人。
 
 成员响应为 `{participating:true,circle,total,items,next_cursor,limit,snapshot,consent_revision,...规则}`。`limit` 同排行榜（默认20、1–100），不传cursor取首页；保持相同limit逐页请求到next_cursor=null。`/me` 或当前圈子摘要返回本人的page_cursor，用于直接加载本人所在页。可选snapshot要求与已加载页面一致。
 

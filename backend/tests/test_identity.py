@@ -8,13 +8,12 @@ import http.client
 import io
 import json
 from pathlib import Path
-import sqlite3
 import tempfile
 import threading
 import unittest
 
 from backend.domain import APIError, MAX_BODY_BYTES, MAX_STEPS, day_context, progress
-from backend.server import make_server
+from backend.tests.pg_fixture import Database, RustServer
 
 
 class RulesTests(unittest.TestCase):
@@ -48,28 +47,25 @@ class RulesTests(unittest.TestCase):
 class IdentityHTTPTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="stairclimb-test-")
-        self.database = Path(self.temporary.name) / "test.sqlite3"
+        self.database = Database()
         self.now = datetime(2026, 11, 14, 10, 30, tzinfo=timezone.utc)
         self.start_server()
 
     def start_server(self):
-        self.server = make_server(self.database, port=0, clock=lambda: self.now)
+        self.server = RustServer(self.database, clock=lambda: self.now)
         self.port = self.server.server_port
-        self.thread = threading.Thread(target=self.server.serve_forever,
-                                       kwargs={"poll_interval": 0.01}, daemon=True)
-        self.thread.start()
 
     def stop_server(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=3)
-        self.assertFalse(self.thread.is_alive())
+        self.server.close()
+        self.assertIsNotNone(self.server.process.poll())
 
     def tearDown(self):
         self.stop_server()
+        self.database.close()
         self.temporary.cleanup()
 
     def request(self, method, path, body=None, token=None, raw=None, headers=None):
+        self.server.set_time(self.now)
         request_headers = dict(headers or {})
         if token is not None:
             request_headers["Authorization"] = f"Bearer {token}"
@@ -258,7 +254,7 @@ class IdentityHTTPTests(unittest.TestCase):
         for body in [{}, {"nickname": "A", "sharing_enabled": True},
                      {"nickname": "A", "token": "forged"}, {"nickname": "A", "id": "forged"}]:
             self.assert_error(self.request("POST", "/v1/users", body), 422, "invalid_fields")
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 0)
 
     def test_body_limits_content_type_and_transfer_encoding(self):
@@ -296,17 +292,11 @@ class IdentityHTTPTests(unittest.TestCase):
 
     def test_storage_failure_is_service_unavailable_without_details(self):
         first = self.register()
-        moved = self.database.with_suffix(".offline")
-        self.database.rename(moved)
-        self.database.mkdir()
-        try:
+        with self.database.outage():
             body = self.assert_error(self.request("GET", "/v1/me", token=first["token"]),
                                      503, "storage_unavailable")
             self.assertNotIn(str(self.database), json.dumps(body))
-            self.assertNotIn("sqlite", json.dumps(body))
-        finally:
-            self.database.rmdir()
-            moved.rename(self.database)
+            self.assertNotIn("postgres", json.dumps(body))
         self.assertEqual(self.request("GET", "/v1/me", token=first["token"])[0], 200)
 
     def test_restart_preserves_auth_nickname_and_revoked_consent(self):
@@ -334,12 +324,16 @@ class IdentityHTTPTests(unittest.TestCase):
             self.request("GET", "/v1/me", token=first["token"])
             self.request("GET", "/missing", token=first["token"])
         self.assertFalse(bool(output.getvalue()), "HTTP server unexpectedly logged a request")
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             digest = db.execute("SELECT token_hash FROM users").fetchone()[0]
         self.assertTrue(digest == hashlib.sha256(first["token"].encode()).hexdigest())
         self.assertTrue(digest != first["token"])
-        for path in self.database.parent.glob("test.sqlite3*"):
-            self.assertFalse(first["token"].encode() in path.read_bytes(), "Raw credential persisted")
+        # Dump the actual isolated PostgreSQL schema; inspect without logging it.
+        from scripts import postgres_dev as pg
+        dump = pg.run(['docker', 'exec', '-u', 'postgres', pg.NAME, 'pg_dump', '-d', 'stairclimb',
+                       '--schema', self.database.schema, '--data-only'])
+        self.assertNotIn(first["token"], dump, "Raw credential persisted")
+        self.assertNotIn(first["token"], self.server.log_path.read_text())
 
 
 if __name__ == "__main__":

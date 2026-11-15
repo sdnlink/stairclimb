@@ -10,10 +10,11 @@ import sys
 import tempfile
 import time
 import unittest
+from backend.tests.pg_fixture import Database
 
 
 ROOT = Path(__file__).resolve().parents[2]
-VARIABLES = ("STAIRCLIMB_HOST", "STAIRCLIMB_PORT", "STAIRCLIMB_DATABASE")
+VARIABLES = ("STAIRCLIMB_HOST", "STAIRCLIMB_PORT", "DATABASE_URL")
 
 
 class LauncherTests(unittest.TestCase):
@@ -32,18 +33,18 @@ class LauncherTests(unittest.TestCase):
         )
         self.assertEqual(json.loads(result.stdout), {
             "STAIRCLIMB_HOST": "127.0.0.1", "STAIRCLIMB_PORT": "8787",
-            "STAIRCLIMB_DATABASE": ".runtime/stairclimb.sqlite3",
+            "DATABASE_URL": "postgresql://stairclimb:CHANGE_ME@127.0.0.1:5432/stairclimb",
         })
 
     def test_sourced_custom_config_starts_real_server_on_temporary_port_and_database(self):
         with tempfile.TemporaryDirectory(prefix="stairclimb-launch-") as temporary:
             directory = Path(temporary)
-            database = directory / "custom database.sqlite3"
+            database = Database()
             config = directory / "development.env"
             config.write_text((ROOT / "backend/development.env.example").read_text()
                               .replace("STAIRCLIMB_PORT=8787", "STAIRCLIMB_PORT=0")
-                              .replace("STAIRCLIMB_DATABASE=.runtime/stairclimb.sqlite3",
-                                       f"STAIRCLIMB_DATABASE='{database}'"))
+                              .replace("DATABASE_URL=postgresql://stairclimb:CHANGE_ME@127.0.0.1:5432/stairclimb",
+                                       f"DATABASE_URL='{database.url}'"))
             log_path = directory / "server.log"
             with log_path.open("w") as log:
                 process = subprocess.Popen(
@@ -52,7 +53,7 @@ class LauncherTests(unittest.TestCase):
                     env=self.clean_environment(), stdout=log, stderr=subprocess.STDOUT,
                 )
                 try:
-                    deadline = time.monotonic() + 5
+                    deadline = time.monotonic() + 30
                     listener = None
                     while time.monotonic() < deadline:
                         output = log_path.read_text()
@@ -60,7 +61,7 @@ class LauncherTests(unittest.TestCase):
                         if listener is not None or process.poll() is not None:
                             break
                         time.sleep(0.02)
-                    self.assertIsNotNone(listener, log_path.read_text())
+                    self.assertIsNotNone(listener, 'Rust launcher did not open its temporary port')
                     port = int(listener.group(1))
                     self.assertGreater(port, 0)
                     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
@@ -71,7 +72,8 @@ class LauncherTests(unittest.TestCase):
                         self.assertEqual(json.loads(response.read())["status"], "ok")
                     finally:
                         connection.close()
-                    self.assertTrue(database.is_file())
+                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 1)
+                    self.assertTrue(Path(f'/proc/{process.pid}/exe').resolve().name == 'stairclimb-server')
                 finally:
                     process.terminate()
                     try:
@@ -79,6 +81,7 @@ class LauncherTests(unittest.TestCase):
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait(timeout=5)
+                    database.close()
 
 
 if __name__ == "__main__":

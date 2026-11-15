@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+INFOPLIST_FILE = StairClimb/Info-Release.plist
+SWIFT_COMPILATION_MODE = wholemodule
+SWIFT_OPTIMIZATION_LEVEL = -O

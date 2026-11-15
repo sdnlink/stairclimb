@@ -1,0 +1,5 @@
+// No credentials. Set the actual address in the app's 今日楼层榜 registration form.
+// This is a documentation example, not a build-time override of persisted identity.
+// Remote API addresses must use HTTPS. HTTP is only for local Debug development.
+// In xcconfig values, write a URL with the slash escaping below to avoid // comments.
+STAIRCLIMB_API_BASE_URL = https:/$()/example.invalid

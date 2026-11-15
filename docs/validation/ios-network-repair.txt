@@ -1,0 +1,53 @@
+ios_network bounded repair: AUD-3
+UTC: 2026-11-14T14:40:40.556786+00:00
+baseline HEAD: 039c2862d38586636fe854883bf6cedda169595d
+prior worker checkpoint: 74c25c1c4ac0b2c00119da667f23746c2d63eafd
+source manifest SHA-256: 526e87f4062072904a9ac56b909e3c05e9905578cbe68ecee8d3d73e7e5d0103
+
+COMMAND: python3 scripts/check_ios_project.py
+PASS project reference graph: 85 objects; 14 app + 5 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS Debug local-only ATS and Release default HTTPS; associated xcconfig/plists
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+EXIT STATUS: 0
+
+COMMAND: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+test_debug_arbitrary_loads_are_still_rejected (test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_local_key_alone_is_rejected (test_ios_project.IOSProjectChecks.test_debug_legacy_local_key_alone_is_rejected) ... ok
+test_debug_local_ip_coverage_and_public_exclusion (test_ios_project.IOSProjectChecks.test_debug_local_ip_coverage_and_public_exclusion) ... ok
+test_debug_missing_each_ip_range_is_rejected (test_ios_project.IOSProjectChecks.test_debug_missing_each_ip_range_is_rejected) ... ok
+test_debug_missing_http_permission_or_extra_tls_relaxation_rejected (test_ios_project.IOSProjectChecks.test_debug_missing_http_permission_or_extra_tls_relaxation_rejected) ... ok
+test_debug_public_or_wildcard_exceptions_are_rejected (test_ios_project.IOSProjectChecks.test_debug_public_or_wildcard_exceptions_are_rejected) ... ok
+test_disabled_capability (test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_missing_entitlement (test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_icon (test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_openstep_duplicate_key_rejected (test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_release_ats_bypass (test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_cannot_inherit_debug_ip_exceptions (test_ios_project.IOSProjectChecks.test_release_cannot_inherit_debug_ip_exceptions) ... ok
+test_release_local_exception_is_also_rejected (test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_test_target_has_no_app_dependency (test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_unlinked_source (test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_valid_project (test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.229s
+
+OK
+EXIT STATUS: 0
+
+COMMAND: git diff --check
+
+EXIT STATUS: 0
+
+AUD-4: unchanged environment limitation: Linux has no Swift/Xcode/macOS/iOS simulator.
+No unavailable build was retried; no Swift/XCTest/system-ATS/signing/device result is claimed.
+Backend implementation, fixed acceptance command and historical validation records were preserved.
+Watcher runs fixed backend delivery checks independently.

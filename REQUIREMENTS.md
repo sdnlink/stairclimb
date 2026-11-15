@@ -31,3 +31,21 @@
 6. 补充真实HTTP多用户测试：同区间同频道、999/1000边界、异区间、迁圈、重复幂等、未同步零值、上海午夜清零重配、旧日拒绝、分页/本人、撤回/删除及重启。继续原固定后端命令；增加Swift分组规则测试和Linux工程检查，保留Mac/iPhone限制。先由独立Reviewer确认覆盖和扩展模块清单，再由Worker实现；扩展的后端、原生圈子和圈子集成交付均是必交模块。
 
 细化及先行独立评审见 `docs/review-03-amendment.md`。原五模块定义保留，追加 `backend_circles`、`ios_circles`、`circles_delivery`；对应验收和依赖记录于评审文件。原iOS、整体交付和新增原生圈子未完成前，不得宣称原始及追加需求全部完成。
+
+## 2026-11-15 技术栈变更（后发授权优先）
+
+正式实现必须为 **Rust HTTP 服务＋PostgreSQL＋原生 Swift/SwiftUI**。本节覆盖上文的正式 Python/SQLite、SQLite 测试隔离和数据库启动要求，所有业务、安全、日期、圈子、隐私和交付要求继续有效。Python 仅用于测试、迁移工具和历史参考。Rust 项目固定在 `backend/Cargo.toml`，包含 `Cargo.lock`。不得用 Rust 包装或代理旧服务。
+
+使用真实 PostgreSQL 事务、唯一约束和锁重验此前64项场景；固定 Python 命令保留，另加 `cargo test --locked --manifest-path backend/Cargo.toml --all-targets` 与 `cargo fmt --manifest-path backend/Cargo.toml --all -- --check`。测试使用隔离 PostgreSQL schema 和临时 HTTP 端口，不接触开发身份；受控时间仅限测试构建/夹具。版本化迁移、无密钥 `DATABASE_URL` 示例、仅本机数据库启动、停止、旧 SQLite 在线备份和逐字段导入校验均必交，不能清库冒充兼容。
+
+独立先行确认见 `docs/review-06-stack-amendment.md`。新增前置模块 `backend_rust_postgres`；原后端模块基于新栈重新复核，依赖顺序为迁移→身份→社交→后端圈子→对应 iOS/交付模块。保留原模块及验收，不因监督器接受状态不同步改写无关已验证 Swift 代码。最终须运行本项目 Rust 二进制及本任务 PostgreSQL，实测健康、榜单、圈子，记录进程、端口、迁移版本、日志和停止方法，且不泄露连接凭证。
+
+## 2026-11-15 邮箱认证、隐私与加密通信（必交增量）
+
+最新授权覆盖「无需邮箱」及本地局域网明文HTTP的默认：提供中文邮箱＋密码＋昵称注册、邮箱归属验证、重发、登录、会话刷新/撤销、退出、忘记密码及安全重置。密码使用带盐自适应哈希；验证/重置凭据高熵、短期、一次性且仅存摘要；服务端限流并避免邮箱枚举。公开模型不含邮箱或认证信息，iOS仅持久会话凭据进入Keychain，不保存明文密码；注册验证不等于健康共享或圈子同意。旧匿名绑定须验证已有凭证及邮箱归属，不清库或错误合并。
+
+iOS正式及本地开发连接均用HTTPS/TLS和正常系统信任校验，移除原局域网HTTP正常路径。提供可信本地CA/域名/证书方法；内部HTTP仅限测试/回环。生产SMTP强制TLS/STARTTLS与证书验证；通过隔离本地邮件捕获器真实验证邮件流程，未配置或发送失败不伪造成功，不向未经授权的真实外部邮箱发送邮件。
+
+保留Rust/PostgreSQL及原三个固定命令，增加真实数据库、HTTP、邮件、会话、隐私、旧身份绑定、SMTP失败及HTTPS证书/域名/明文拒绝测试，并适配Swift UI/测试和Linux检查。模块提案见`docs/module-additions-07.json`，这些新增认证及HTTPS模块尚未实现，不因记录需求即视为完成。
+
+监督器原八模块定义逐字不可变，后发覆盖通过新增模块承接；不重写旧acceptance/depends_on/files/checks，也不直接改监督器状态。格式修复和保持的证据见`docs/verification-06-conclusion-repair.md`。

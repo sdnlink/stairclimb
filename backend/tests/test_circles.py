@@ -4,7 +4,6 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
-import sqlite3
 import threading
 import unittest
 from urllib.parse import urlencode
@@ -143,7 +142,7 @@ class CirclesHTTPTests(unittest.TestCase):
         self.assertEqual(self.sync(moving, 0, revision=2)[0], 200)
         self.assertEqual(self.circle(low)["total"], 2)
         self.assertEqual(self.circle(high)["total"], 1)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM circle_participation WHERE enabled = 1").fetchone()[0], 3)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps").fetchone()[0], 3)
 
@@ -192,7 +191,7 @@ class CirclesHTTPTests(unittest.TestCase):
         first, second, third = self.member("A", 999), self.member("B", 1000), self.member("C", 999)
         old = self.circle(first, "/members", limit=1)
         old_rows = None
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             old_rows = db.execute("SELECT user_id,date,steps FROM daily_steps ORDER BY user_id").fetchall()
         self.now += timedelta(seconds=1)
         for user in [first, second, third]:
@@ -206,7 +205,7 @@ class CirclesHTTPTests(unittest.TestCase):
         }), token=first["token"]), 409, "circle_changed")
         error = self.assert_error(self.sync(first, 999, revision=2, date="2026-12-31"), 409, "day_changed")
         self.assertEqual(error["date"], "2027-01-01")
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT user_id,date,steps FROM daily_steps ORDER BY user_id").fetchall(), old_rows)
         self.assertEqual(self.sync(second, 1000, revision=2)[0], 200)
         self.assertEqual(self.circle(first)["total"], 2)
@@ -301,7 +300,7 @@ class CirclesHTTPTests(unittest.TestCase):
         self.share(user, True, 3)
         self.assertFalse(self.circle(user)["participating"])
         self.assertEqual(self.circle(other)["total"], 1)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM daily_steps WHERE user_id = ?",
                                         (user["user"]["id"],)).fetchone()[0], 0)
 
@@ -317,7 +316,7 @@ class CirclesHTTPTests(unittest.TestCase):
         ]:
             self.assert_error(self.request(method, path, body, first["token"]), 401, "unauthorized")
         self.assertEqual(self.circle(other)["total"], 1)
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM circle_participation").fetchone()[0], 1)
 
     def test_concurrent_participation_upload_and_privacy_changes_are_serialized(self):
@@ -393,8 +392,9 @@ class CirclesHTTPTests(unittest.TestCase):
         self.share(user)
         self.assertEqual(self.sync(user, 1000)[0], 200)
         self.stop_server()
-        with sqlite3.connect(self.database) as db:
+        with self.database.connect() as db:
             db.execute("DROP TABLE circle_participation")
+            db.execute("DROP TABLE schema_migrations")
         self.start_server()
         self.assertFalse(self.circle(user)["participating"])
         self.assertEqual(self.today(user)["progress"]["steps"], 1000)
@@ -404,10 +404,7 @@ class CirclesHTTPTests(unittest.TestCase):
 
     def test_storage_failure_does_not_claim_join_or_exit_succeeded(self):
         user = self.member("暂时离线", 999)
-        moved = self.database.with_suffix(".offline")
-        self.database.rename(moved)
-        self.database.mkdir()
-        try:
+        with self.database.outage():
             for method, url, body in [
                 ("GET", "/v1/circles/current", None),
                 ("GET", "/v1/circles/current/members", None),
@@ -416,30 +413,19 @@ class CirclesHTTPTests(unittest.TestCase):
                 error = self.assert_error(self.request(method, url, body, user["token"]),
                                           503, "storage_unavailable")
                 self.assertNotIn(str(self.database), json.dumps(error))
-        finally:
-            self.database.rmdir()
-            moved.rename(self.database)
+
         self.assertTrue(self.circle(user)["participating"])
         self.assertEqual(self.circle(user)["consent_revision"], 2)
 
     def test_pending_upload_over_midnight_cannot_move_into_new_day_channel(self):
         self.now = datetime(2026, 11, 14, 15, 59, 59, tzinfo=timezone.utc)
         user = self.member("跨日排队", 999)
-        sampled = threading.Event()
-        def clock():
-            now = self.now
-            sampled.set()
-            return now
-        self.server.application.clock = clock
-        with sqlite3.connect(self.database) as blocker, ThreadPoolExecutor(max_workers=1) as pool:
-            blocker.execute("BEGIN IMMEDIATE")
+        with ThreadPoolExecutor(max_workers=1) as pool, self.database.write_lock():
             pending = pool.submit(self.sync, user, 1000, 2, "2026-11-14")
-            try:
-                self.assertTrue(sampled.wait(timeout=2))
-                self.now += timedelta(seconds=1)
-            finally:
-                blocker.commit()
-            self.assert_error(pending.result(timeout=3), 409, "day_changed")
+            self.database.wait_for_blocked_writer()
+            self.now += timedelta(seconds=1)
+            self.server.set_time(self.now)
+        self.assert_error(pending.result(timeout=3), 409, "day_changed")
         fresh = self.circle(user)
         self.assertEqual(fresh["circle"]["id"], "2026-11-15:0-999")
         self.assertEqual(fresh["entry"]["steps"], 0)
