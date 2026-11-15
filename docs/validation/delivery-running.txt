@@ -1,0 +1,201 @@
+source_version=ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1 + current delivery diff
+$ python3 scripts/local_service.py start
+exit_status=0
+{
+  "state": "running",
+  "source_version": "ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1",
+  "address": "https://127.0.0.1:8787",
+  "port": 8787,
+  "processes": {
+    "smtp": {
+      "pid": 1521354,
+      "start_ticks": "76911231",
+      "argv": [
+        "/home/skn/anaconda3/bin/python3",
+        "/home/skn/code/stairclimb/scripts/local_service.py",
+        "_capture",
+        "--directory",
+        "/home/skn/code/stairclimb/.runtime/delivery"
+      ]
+    },
+    "rust": {
+      "pid": 1521357,
+      "start_ticks": "76911238",
+      "argv": [
+        "/home/skn/code/stairclimb/backend/target/debug/stairclimb-server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8787"
+      ]
+    }
+  },
+  "binary": "/home/skn/code/stairclimb/backend/target/debug/stairclimb-server",
+  "binary_sha256": "dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91",
+  "database": {
+    "container": "stairclimb-pg-fe5e36b647",
+    "host": "127.0.0.1",
+    "port": 32807,
+    "database": "stairclimb",
+    "image": "postgres:17-bookworm",
+    "schema": "public"
+  },
+  "migrations": [
+    1,
+    2,
+    3
+  ],
+  "ca_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/ca.pem",
+  "tls_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/server.pem",
+  "tls_key": "/home/skn/code/stairclimb/.runtime/delivery/tls/server-key.pem",
+  "server_log": "/home/skn/code/stairclimb/.runtime/delivery/server.log",
+  "smtp_log": "/home/skn/code/stairclimb/.runtime/delivery/smtp.log"
+}
+$ python3 scripts/local_service.py check
+exit_status=0
+{
+  "status": "passed",
+  "checked_at": "2026-11-15T07:13:10.038489+00:00",
+  "address": "https://127.0.0.1:8787",
+  "rust_pid": 1521357,
+  "binary_sha256": "dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91",
+  "source_version": "ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1",
+  "test_data": "Two disposable, synthetic task accounts; removed in finally. No HealthKit data.",
+  "health": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "max_steps": 1000000,
+    "status": "ok",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai"
+  },
+  "leaderboard": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "items": [
+      {
+        "floor": 9,
+        "is_me": false,
+        "nickname": "交付自检2",
+        "position": 1,
+        "rank": 1,
+        "remaining_steps": 1,
+        "steps": 999,
+        "user_id": "b7d17b92ffbd4c2ea08c8899c64b7b9b"
+      }
+    ],
+    "limit": 1,
+    "max_steps": 1000000,
+    "next_cursor": "WyIyMDI2LTExLTE1LjQiLDEsMV0",
+    "snapshot": "2026-11-15.4",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 2
+  },
+  "leaderboard_traversed": 2,
+  "me": {
+    "circle_band_steps": 1000,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "entry": {
+      "floor": 1,
+      "is_me": true,
+      "nickname": "交付自检1",
+      "position": 2,
+      "rank": 2,
+      "remaining_steps": 99,
+      "steps": 101,
+      "user_id": "0b4d62e73c434f3f9ea54fd4eff6a83a"
+    },
+    "limit": 1,
+    "max_steps": 1000000,
+    "page_cursor": "WyIyMDI2LTExLTE1LjQiLDEsMV0",
+    "snapshot": "2026-11-15.4",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 2
+  },
+  "circles": {
+    "circle": null,
+    "circle_band_steps": 1000,
+    "consent_revision": 1,
+    "date": "2026-11-15",
+    "day_end": "2026-11-16T00:00:00+08:00",
+    "day_start": "2026-11-15T00:00:00+08:00",
+    "entry": null,
+    "items": [],
+    "limit": 20,
+    "max_steps": 1000000,
+    "next_cursor": null,
+    "page_cursor": null,
+    "participating": false,
+    "snapshot": "2026-11-15.4",
+    "steps_per_floor": 100,
+    "timezone": "Asia/Shanghai",
+    "total": 0
+  },
+  "accounts_deleted": 2
+}
+$ python3 scripts/local_service.py status
+exit_status=0
+{
+  "state": "running",
+  "source_version": "ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1",
+  "address": "https://127.0.0.1:8787",
+  "port": 8787,
+  "processes": {
+    "smtp": {
+      "pid": 1521354,
+      "start_ticks": "76911231",
+      "argv": [
+        "/home/skn/anaconda3/bin/python3",
+        "/home/skn/code/stairclimb/scripts/local_service.py",
+        "_capture",
+        "--directory",
+        "/home/skn/code/stairclimb/.runtime/delivery"
+      ]
+    },
+    "rust": {
+      "pid": 1521357,
+      "start_ticks": "76911238",
+      "argv": [
+        "/home/skn/code/stairclimb/backend/target/debug/stairclimb-server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8787"
+      ]
+    }
+  },
+  "binary": "/home/skn/code/stairclimb/backend/target/debug/stairclimb-server",
+  "binary_sha256": "dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91",
+  "database": {
+    "container": "stairclimb-pg-fe5e36b647",
+    "host": "127.0.0.1",
+    "port": 32807,
+    "database": "stairclimb",
+    "image": "postgres:17-bookworm",
+    "schema": "public"
+  },
+  "migrations": [
+    1,
+    2,
+    3
+  ],
+  "ca_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/ca.pem",
+  "tls_certificate": "/home/skn/code/stairclimb/.runtime/delivery/tls/server.pem",
+  "tls_key": "/home/skn/code/stairclimb/.runtime/delivery/tls/server-key.pem",
+  "server_log": "/home/skn/code/stairclimb/.runtime/delivery/server.log",
+  "smtp_log": "/home/skn/code/stairclimb/.runtime/delivery/smtp.log"
+}
+$ curl --fail --silent --cacert /home/skn/code/stairclimb/.runtime/delivery/tls/ca.pem https://127.0.0.1:8787/health
+{"circle_band_steps":1000,"date":"2026-11-15","day_end":"2026-11-16T00:00:00+08:00","day_start":"2026-11-15T00:00:00+08:00","max_steps":1000000,"status":"ok","steps_per_floor":100,"timezone":"Asia/Shanghai"}
+exit_status=0
+stop_command=python3 scripts/local_service.py stop
+database_stop_command=python3 scripts/postgres_dev.py stop (after stopping this service; project data retained)
+LIMIT: loopback local development CA, not installed on devices; no Apple build, signing, HealthKit or visual verification. SMTP captured locally, no external mail.

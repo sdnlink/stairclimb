@@ -1,0 +1,131 @@
+source_version=ef0ecad6bcba71f6b677d12bafd8c48a42bd3af1 + current delivery diff
+$ python3 -m unittest backend.tests.test_delivery backend.tests.test_data_access -v
+test_changed_process_identity_refuses_to_signal_either_child (backend.tests.test_delivery.DeliveryTests.test_changed_process_identity_refuses_to_signal_either_child) ... ERROR
+test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts (backend.tests.test_delivery.DeliveryTests.test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts) ... ERROR
+test_failed_readiness_stops_only_spawned_children_and_keeps_database (backend.tests.test_delivery.DeliveryTests.test_failed_readiness_stops_only_spawned_children_and_keeps_database) ... ERROR
+test_failed_readiness_stops_only_spawned_children_and_keeps_database (backend.tests.test_delivery.DeliveryTests.test_failed_readiness_stops_only_spawned_children_and_keeps_database) ... ERROR
+test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot (backend.tests.test_delivery.DeliveryTests.test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot) ... ERROR
+test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot (backend.tests.test_delivery.DeliveryTests.test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot) ... ERROR
+test_production_https_captured_mail_probe_cleanup_and_private_artifacts (backend.tests.test_delivery.DeliveryTests.test_production_https_captured_mail_probe_cleanup_and_private_artifacts) ... ERROR
+test_noop_write_does_not_take_public_revision_lock (backend.tests.test_data_access.DataAccessTests.test_noop_write_does_not_take_public_revision_lock) ... ok
+test_pool_exhaustion_is_bounded_http_error_and_leases_return (backend.tests.test_data_access.DataAccessTests.test_pool_exhaustion_is_bounded_http_error_and_leases_return) ... ok
+test_queued_upload_rereads_consent_after_user_row_is_granted (backend.tests.test_data_access.DataAccessTests.test_queued_upload_rereads_consent_after_user_row_is_granted) ... ok
+test_scaled_sql_pages_ties_zero_values_own_location_and_snapshot_invalidation (backend.tests.test_data_access.DataAccessTests.test_scaled_sql_pages_ties_zero_values_own_location_and_snapshot_invalidation) ... ok
+test_waiting_user_does_not_block_other_user_and_revocation_blocks_replay (backend.tests.test_data_access.DataAccessTests.test_waiting_user_does_not_block_other_user_and_revocation_blocks_replay) ... ok
+
+======================================================================
+ERROR: test_changed_process_identity_refuses_to_signal_either_child (backend.tests.test_delivery.DeliveryTests.test_changed_process_identity_refuses_to_signal_either_child)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 29, in stop
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts (backend.tests.test_delivery.DeliveryTests.test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 29, in stop
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_failed_readiness_stops_only_spawned_children_and_keeps_database (backend.tests.test_delivery.DeliveryTests.test_failed_readiness_stops_only_spawned_children_and_keeps_database)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 209, in start
+    health = self.request(state, 'GET', '/health')
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skn/anaconda3/lib/python3.12/unittest/mock.py", line 1134, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skn/anaconda3/lib/python3.12/unittest/mock.py", line 1138, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skn/anaconda3/lib/python3.12/unittest/mock.py", line 1193, in _execute_mock_call
+    raise effect
+scripts.local_service.ServiceError: intentional readiness failure
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 113, in test_failed_readiness_stops_only_spawned_children_and_keeps_database
+    self.start()
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 32, in start
+    return self.service.start(port, database_url=self.database.url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 222, in start
+    stop_process(identity(child.pid))
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_failed_readiness_stops_only_spawned_children_and_keeps_database (backend.tests.test_delivery.DeliveryTests.test_failed_readiness_stops_only_spawned_children_and_keeps_database)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 29, in stop
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot (backend.tests.test_delivery.DeliveryTests.test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 85, in test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot (backend.tests.test_delivery.DeliveryTests.test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 29, in stop
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+======================================================================
+ERROR: test_production_https_captured_mail_probe_cleanup_and_private_artifacts (backend.tests.test_delivery.DeliveryTests.test_production_https_captured_mail_probe_cleanup_and_private_artifacts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_delivery.py", line 29, in stop
+    self.service.stop()
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 248, in stop
+    stop_process(record)
+  File "/home/skn/code/stairclimb/scripts/local_service.py", line 64, in stop_process
+    descriptor = os.pidfd_open(record['pid'])
+                 ^^^^^^^^^^^^^
+AttributeError: module 'os' has no attribute 'pidfd_open'
+
+----------------------------------------------------------------------
+Ran 10 tests in 18.760s
+
+FAILED (errors=7)
+
+exit_status=1

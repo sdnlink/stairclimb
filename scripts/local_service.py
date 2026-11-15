@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""Run the task's persistent loopback HTTPS service and local-only SMTP sink."""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from email import policy
+from email.parser import BytesParser
+import fcntl
+import ctypes
+import hashlib
+import http.client
+import json
+import os
+import platform
+from pathlib import Path
+import re
+import secrets
+import select
+import signal
+import socket
+import ssl
+import subprocess
+import sys
+import threading
+import time
+from urllib.parse import parse_qs, urlencode, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts import postgres_dev as pg
+from scripts.dev_tls import initialize
+from scripts.smtp_capture import Capture
+
+DEFAULT = ROOT / '.runtime/delivery'
+BINARY = ROOT / 'backend/target/debug/stairclimb-server'
+
+
+class ServiceError(RuntimeError):
+    pass
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def save(path, value):
+    temporary = path.with_suffix('.new')
+    pg.private_write(temporary, json.dumps(value, ensure_ascii=False, indent=2) + '\n')
+    temporary.replace(path)
+
+
+def identity(pid):
+    """Start ticks plus argv identify an owned process; a zombie has already stopped."""
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(') ', 1)[1].split()
+        if fields[0] == 'Z':
+            return None
+        return {'pid': pid, 'start_ticks': fields[19],
+                'argv': Path(f'/proc/{pid}/cmdline').read_bytes().decode().rstrip('\0').split('\0')}
+    except FileNotFoundError:
+        return None
+
+
+def pidfd_call(number, *arguments):
+    # Some Python/libc builds omit wrappers even on a supported Linux kernel.
+    # These numbers are shared by Linux x86_64 and asm-generic aarch64 headers.
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'aarch64'):
+        raise ServiceError('This lifecycle entry requires Linux x86_64/aarch64 with pidfd support')
+    library = ctypes.CDLL(None, use_errno=True)
+    library.syscall.restype = ctypes.c_long
+    result = library.syscall(ctypes.c_long(number), *arguments)
+    if result < 0:
+        raise OSError(ctypes.get_errno(), 'Linux pidfd operation failed')
+    return result
+
+
+def open_pidfd(pid):
+    if hasattr(os, 'pidfd_open'):
+        return os.pidfd_open(pid)
+    return pidfd_call(434, ctypes.c_int(pid), ctypes.c_uint(0))
+
+
+def send_pidfd(descriptor, number):
+    if hasattr(signal, 'pidfd_send_signal'):
+        signal.pidfd_send_signal(descriptor, number)
+    else:
+        pidfd_call(424, ctypes.c_int(descriptor), ctypes.c_int(number), ctypes.c_void_p(0), ctypes.c_uint(0))
+
+
+def stop_process(record):
+    """Use pidfd so even PID reuse between checking and signalling is harmless."""
+    try:
+        descriptor = open_pidfd(record['pid'])
+    except ProcessLookupError:
+        return
+    try:
+        actual = identity(record['pid'])
+        if actual is None:
+            return
+        if actual != record:
+            raise ServiceError('Process ownership changed; refusing to signal it')
+        send_pidfd(descriptor, signal.SIGTERM)
+        if not select.select([descriptor], [], [], 5)[0]:
+            send_pidfd(descriptor, signal.SIGKILL)
+            if not select.select([descriptor], [], [], 5)[0]:
+                raise ServiceError('Owned process did not stop')
+    finally:
+        os.close(descriptor)
+
+
+def wait_until(process, predicate, description):
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise ServiceError(description + ' exited; inspect its private log')
+        result = predicate()
+        if result:
+            return result
+        time.sleep(.025)
+    raise ServiceError(description + ' readiness timed out')
+
+
+class LocalService:
+    def __init__(self, directory=DEFAULT):
+        self.directory = Path(directory).resolve()
+        if not self.directory.is_relative_to((ROOT / '.runtime').resolve()):
+            raise ServiceError('Runtime files must stay under ignored .runtime')
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.directory.chmod(0o700)
+        self.state_file = self.directory / 'service.json'
+        self.children = []
+
+    @contextmanager
+    def locked(self):
+        with (self.directory / 'control.lock').open('a') as lock:
+            os.chmod(lock.name, 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def read(self):
+        value = json.loads(self.state_file.read_text())
+        if value['root'] != str(ROOT):
+            raise ServiceError('Runtime belongs to another workspace')
+        return value
+
+    def status(self):
+        state = self.read()
+        if state['state'] != 'running':
+            raise ServiceError('Local service is stopped')
+        if any(identity(record['pid']) != record for record in state['processes'].values()):
+            raise ServiceError('A recorded process stopped or changed; run stop before restarting')
+        return state
+
+    def request(self, state, method, path, body=None, token=None, expected=200):
+        context = ssl.create_default_context(cafile=state['ca_certificate'])
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        connection = http.client.HTTPSConnection('127.0.0.1', state['port'], context=context, timeout=10)
+        headers = {'Content-Type': 'application/json'}
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
+        try:
+            connection.request(method, path, json.dumps(body).encode() if body is not None else None, headers)
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+            if response.status != expected or response.getheader('Cache-Control') != 'no-store':
+                raise ServiceError(f'{method} {path.split("?")[0]} returned unexpected HTTP status {response.status}')
+            return payload
+        finally:
+            connection.close()
+
+    def start(self, port=8787, *, database_url=None):
+        with self.locked():
+            if self.state_file.exists() and self.read()['state'] != 'stopped':
+                return self.status()
+            # Verify safe stopping is available before creating any resources.
+            descriptor = open_pidfd(os.getpid())
+            try:
+                send_pidfd(descriptor, 0)
+            finally:
+                os.close(descriptor)
+            database_url = database_url or pg.ensure()
+            options = parse_qs(urlsplit(database_url).query).get('options', ['-csearch_path=public'])[0]
+            match = re.fullmatch(r'-csearch_path=(public|test_[0-9a-f]{32})', options)
+            if not match:
+                raise ServiceError('Only task public or isolated test schemas are supported')
+            schema = match[1]
+            state = {'root': str(ROOT), 'state': 'starting', 'started_at': now(), 'processes': {},
+                     'database': dict(json.loads((pg.RUNTIME / 'postgres.json').read_text()), schema=schema),
+                     'directory': str(self.directory), 'smtp_directory': str(self.directory / 'mail'),
+                     'server_log': str(self.directory / 'server.log'), 'smtp_log': str(self.directory / 'smtp.log'),
+                     'build_log': str(self.directory / 'build.log')}
+            with self.private_log('build.log', 'wb') as log:
+                result = subprocess.run(['cargo', 'build', '--locked', '--manifest-path', str(ROOT / 'backend/Cargo.toml'),
+                                         '--bin', 'stairclimb-server'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+            if result.returncode:
+                raise ServiceError('Rust build failed; inspect the private build log')
+            certificates = initialize(self.directory / 'tls')
+            state['ca_certificate'] = str(certificates / 'ca.pem')
+            state['tls_certificate'] = str(certificates / 'server.pem')
+            state['tls_key'] = str(certificates / 'server-key.pem')
+            state['binary'] = str(BINARY)
+            state['binary_sha256'] = hashlib.sha256(BINARY.read_bytes()).hexdigest()
+            state['source_version'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+            inputs = [ROOT / 'backend/Cargo.toml', ROOT / 'backend/Cargo.lock',
+                      *sorted((ROOT / 'backend/src').rglob('*.rs')), *sorted((ROOT / 'backend/migrations').glob('*.sql'))]
+            state['backend_sources'] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
+            save(self.state_file, state)
+            children = []
+            try:
+                ready = self.directory / 'smtp-ready.json'
+                ready.unlink(missing_ok=True)
+                environment = {key: value for key, value in os.environ.items()
+                               if not key.startswith(('SMTP_', 'STAIRCLIMB_')) and key != 'DATABASE_URL'}
+                mail = self.spawn([sys.executable, str(Path(__file__).resolve()), '_capture', '--directory',
+                                   str(self.directory)], environment, 'smtp.log')
+                children.append(mail)
+                self.children.append(mail)
+                state['processes']['smtp'] = identity(mail.pid)
+                save(self.state_file, state)
+                mail_state = wait_until(mail, lambda: json.loads(ready.read_text()) if ready.exists() else None, 'SMTP capture')
+                state['smtp_port'] = mail_state['port']
+                # The sink can never forward mail, even if the caller has production SMTP env vars.
+                environment.update(DATABASE_URL=database_url, SMTP_MODE='local-capture', SMTP_HOST='127.0.0.1',
+                                   SMTP_PORT=str(state['smtp_port']), SMTP_FROM='noreply@stairclimb.test',
+                                   STAIRCLIMB_TLS_CERT=state['tls_certificate'], STAIRCLIMB_TLS_KEY=state['tls_key'])
+                with socket.socket() as probe:
+                    try:
+                        probe.bind(('127.0.0.1', port))
+                    except OSError:
+                        port = 0  # Let the OS allocate, preserving whoever owns the preferred port.
+                offset = (self.directory / 'server.log').stat().st_size if (self.directory / 'server.log').exists() else 0
+                server = self.spawn([str(BINARY), '--host', '127.0.0.1', '--port', str(port)], environment, 'server.log')
+                children.append(server)
+                self.children.append(server)
+                state['processes']['rust'] = identity(server.pid)
+                save(self.state_file, state)
+                listener = wait_until(server, lambda: re.search(r'listening on 127\.0\.0\.1:(\d+);',
+                                      (self.directory / 'server.log').read_text()[offset:]), 'Rust HTTPS server')
+                state['port'] = int(listener[1])
+                state['address'] = f'https://127.0.0.1:{state["port"]}'
+                executable = Path(f'/proc/{server.pid}/exe')
+                if hashlib.sha256(executable.read_bytes()).hexdigest() != state['binary_sha256']:
+                    raise ServiceError('Running executable differs from the built Rust server')
+                health = self.request(state, 'GET', '/health')
+                if health['status'] != 'ok' or health['timezone'] != 'Asia/Shanghai':
+                    raise ServiceError('Unexpected health response')
+                state['migrations'] = json.loads(pg.sql('SET search_path TO ' + schema + '; SELECT json_agg(version ORDER BY version) FROM schema_migrations;'))
+                if state['migrations'] != [1, 2, 3]:
+                    raise ServiceError('Unexpected database migrations')
+                state['state'] = 'running'
+                state['health'] = health
+                save(self.state_file, state)
+                return state
+            except BaseException:
+                for child in reversed(children):
+                    if child.poll() is None:
+                        stop_process(identity(child.pid))
+                    child.wait(timeout=5)
+                state['state'] = 'stopped'
+                save(self.state_file, state)
+                raise
+
+    def private_log(self, name, mode='ab'):
+        path = self.directory / name
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if mode == 'wb' else os.O_APPEND), 0o600)
+        os.chmod(path, 0o600)
+        return os.fdopen(descriptor, mode)
+
+    def spawn(self, command, environment, name):
+        with self.private_log(name) as log:
+            return subprocess.Popen(command, cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+    def stop(self):
+        with self.locked():
+            state = self.read()
+            # Validate every live identity before stopping either task process.
+            for record in state['processes'].values():
+                actual = identity(record['pid'])
+                if actual is not None and actual != record:
+                    raise ServiceError('Process ownership changed; refusing to signal it')
+            for record in reversed(list(state['processes'].values())):
+                stop_process(record)
+            for child in self.children:
+                child.wait(timeout=5)
+            self.children.clear()
+            state.update(state='stopped', stopped_at=now())
+            save(self.state_file, state)
+            return {'state': 'stopped', 'database_retained': True, 'logs_retained': True}
+
+    def mail_token(self, email):
+        for path in (self.directory / 'mail').glob('*.eml'):
+            mail = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+            if str(mail['To']) == email:
+                tokens = re.findall(r'(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])', mail.get_content())
+                if len(tokens) == 1:
+                    return tokens[0]
+        raise ServiceError('Verification proof not found in local captured mail')
+
+    def check(self):
+        """Two disposable accounts exercise the actual persistent production process."""
+        with self.locked():
+            (self.directory / 'probe.json').unlink(missing_ok=True)
+            state = self.status()
+            request = lambda method, path, body=None, token=None, expected=200: self.request(state, method, path, body, token, expected)
+            result = {'status': 'failed', 'checked_at': now(), 'address': state['address'], 'rust_pid': state['processes']['rust']['pid'],
+                      'binary_sha256': state['binary_sha256'], 'source_version': state['source_version'],
+                      'test_data': 'Two disposable, synthetic task accounts; removed in finally. No HealthKit data.',
+                      'health': request('GET', '/health')}
+            sessions = []
+            cleanup_ok = True
+            try:
+                if request('POST', '/v1/users', {'nickname': '不能绕过邮箱'}, expected=403)['error']['code'] != 'email_registration_required':
+                    raise ServiceError('Anonymous registration bypass was not rejected')
+                for index, steps in enumerate([101, 999]):
+                    email = 'delivery-' + secrets.token_hex(12) + '@example.test'
+                    password = secrets.token_urlsafe(32)
+                    request('POST', '/v1/auth/register', {'email': email, 'password': password, 'nickname': f'交付自检{index + 1}'}, expected=202)
+                    request('POST', '/v1/auth/verify', {'token': self.mail_token(email), 'password': password})
+                    login = request('POST', '/v1/auth/login', {'email': email, 'password': password})
+                    token = login['token']
+                    sessions.append(token)
+                    if login['user']['sharing_enabled']:
+                        raise ServiceError('Registration unexpectedly enabled sharing')
+                    date = request('GET', '/health')['date']
+                    if request('PUT', '/v1/me/steps', {'date': date, 'steps': steps, 'expected_revision': 0}, token, 403)['error']['code'] != 'sharing_required':
+                        raise ServiceError('Missing health sharing consent was not rejected')
+                    user = request('PUT', '/v1/me/sharing', {'enabled': True, 'expected_revision': 0}, token)['user']
+                    body = {'date': date, 'steps': steps, 'expected_revision': user['consent_revision']}
+                    first = request('PUT', '/v1/me/steps', body, token)
+                    second = request('PUT', '/v1/me/steps', body, token)
+                    if first['progress'] != second['progress'] or first['progress']['floor'] != steps // 100:
+                        raise ServiceError('Cumulative upload was not idempotent')
+                result['leaderboard'] = request('GET', '/v1/leaderboard?limit=1', token=sessions[0])
+                items = list(result['leaderboard']['items'])
+                cursor = result['leaderboard']['next_cursor']
+                seen = set()
+                while cursor:
+                    if cursor in seen:
+                        raise ServiceError('Repeated leaderboard cursor')
+                    seen.add(cursor)
+                    page = request('GET', '/v1/leaderboard?' + urlencode({'limit': 1, 'cursor': cursor}), token=sessions[0])
+                    items.extend(page['items'])
+                    cursor = page['next_cursor']
+                ids = {request('GET', '/v1/me', token=token)['user']['id'] for token in sessions}
+                if len(items) != len({item['user_id'] for item in items}) or not ids.issubset({item['user_id'] for item in items}):
+                    raise ServiceError('Leaderboard traversal lost or duplicated users')
+                result['leaderboard_traversed'] = len(items)
+                result['me'] = request('GET', '/v1/leaderboard/me?limit=1', token=sessions[0])
+                own_page = request('GET', '/v1/leaderboard?' + urlencode({'limit': 1, 'cursor': result['me']['page_cursor']}), token=sessions[0])
+                result['circles'] = request('GET', '/v1/circles/current', token=sessions[0])
+                if not result['me']['entry']['is_me'] or not own_page['items'][0]['is_me'] or result['circles']['participating']:
+                    raise ServiceError('Unexpected self marker or implicit circle consent')
+                result['status'] = 'passed'
+            except BaseException:
+                result['status'] = 'failed'
+                raise
+            finally:
+                for token in sessions:
+                    try:
+                        user = request('GET', '/v1/me', token=token)['user']
+                        request('DELETE', '/v1/me', {'expected_revision': user['consent_revision']}, token)
+                        request('GET', '/v1/me', token=token, expected=401)
+                    except Exception:
+                        cleanup_ok = False
+                result['accounts_deleted'] = len(sessions) if cleanup_ok else None
+                if not cleanup_ok:
+                    result['status'] = 'failed_cleanup'
+                save(self.directory / 'probe.json', result)
+            if not cleanup_ok:
+                raise ServiceError('Probe account cleanup failed; inspect private runtime state')
+            return result
+
+
+def capture(directory):
+    service = LocalService(directory)
+    sink = Capture(service.directory / 'mail')
+    stopped = threading.Event()
+    for number in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(number, lambda *_: stopped.set())
+    save(service.directory / 'smtp-ready.json', {'host': '127.0.0.1', 'port': sink.server_address[1], 'external_delivery': False})
+    try:
+        stopped.wait()
+    finally:
+        sink.close()
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['start', 'status', 'check', 'stop', '_capture'])
+    parser.add_argument('--directory', type=Path, default=DEFAULT)
+    parser.add_argument('--port', type=int, default=8787)
+    args = parser.parse_args()
+    try:
+        if args.action == '_capture':
+            capture(args.directory)
+            return
+        if not 0 <= args.port <= 65535:
+            raise ServiceError('Port must be in 0..65535')
+        service = LocalService(args.directory)
+        value = service.start(args.port) if args.action == 'start' else getattr(service, args.action)()
+        print(json.dumps(value, ensure_ascii=False, indent=2))
+    except Exception as error:
+        # Never emit exception text from TLS, database, email or authentication helpers.
+        print(str(error) if isinstance(error, ServiceError) else 'Local service command failed; inspect task runtime logs', file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

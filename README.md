@@ -2,11 +2,23 @@
 
 原生 SwiftUI iOS 应用 + Rust HTTP/PostgreSQL 后端的分模块实现（按最新技术栈授权迁移）。所有楼层都是每 100 步兑换的虚拟游戏楼层，日界线统一为 **Asia/Shanghai**，不采集真实地理位置。
 
-当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行，最终集成交付尚未完成。
+当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行；本次交付基础持续运行入口，圈子及邮箱最终集成仍待后续模块复核。
 
 邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通；[Mac自动构建/XCTest入口及真机清单](docs/APPLE_VALIDATION.md)已提供，最终集成交付继续必交，本次模块交审不代表整个需求完成。
 
 ## 本地启动
+
+持续运行交付（默认优先8787，HTTPS，仅本机）：
+
+```sh
+python3 scripts/local_service.py start
+python3 scripts/local_service.py check
+python3 scripts/local_service.py status
+# 仅停止此入口的Rust及邮件捕获进程，保留数据库与日志
+python3 scripts/local_service.py stop
+```
+
+实际地址、PID、二进制/源码摘要、数据库、迁移、日志和证书位置保存在被忽略的 `.runtime/delivery/service.json`，自检响应在 `probe.json`；不包含凭证。自检用两个临时邮箱账号并在结束删除，只向本地捕获器发信。证书信任、独立停止数据库、局域网真机访问和可复现验证见[持续运行交付说明](docs/DELIVERY.md)。下方保留分步前台启动方式。
 
 需要 Rust/Cargo、Python 3.10+（验证/迁移工具）以及可用 Docker。正式 HTTP 由本项目编译的 Rust 二进制提供，业务数据仅存 PostgreSQL；旧 Python 服务仅保留为历史参考，不参与启动或当前 HTTP 验收。本地验证使用隔离邮件捕获器，无需付费服务或开发者账号；正式邮箱投递须由部署者配置SMTP。
 
@@ -141,7 +153,7 @@ python3 scripts/verify_ios_api.py
 
 已有匿名Keychain记录兼容保留，通过“绑定旧身份邮箱”发送验证邮件，验证/重置同时使用该设备原凭证。成功后登录原账号，保留原ID、昵称、历史和同意状态；本机停传状态不会被绑定或登录自动打开。若邮箱被他人未验证的旧绑定占用，可申请找回邮件，再主动选择“建立独立账号”；不合并或获取旧身份。切换到另一个账号前须处理原账号数据，再明确移除此机凭证。
 
-当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令、自动入口和workflow不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac入口已交付源码及Linux可运行检查，实际Apple平台验证仍待设备；最终集成和持续后端实例继续待交付，整体需求尚未完成。
+当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令、自动入口和workflow不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac入口已交付源码及Linux可运行检查，实际Apple平台验证仍待设备；本地持续实例见[交付说明](docs/DELIVERY.md)，圈子与邮箱最终集成继续按台账交审，整体需求尚未完成。
 
 监督流程已由外部 Auto Moniter 启动，worker 不修改监督器源码、不提交或暂存 Git。独立 reviewer 和 Watcher 的复核结果由监督流程记录，本 README 不冒称它们已接受实现。
 
@@ -158,4 +170,4 @@ python3 scripts/import_sqlite.py --sqlite /absolute/path/to/legacy.sqlite3 --sch
 
 工具通过 SQLite online backup 创建一致备份到 `.runtime/backups/`（600权限，即使有WAL也不遗漏提交数据），在单个PostgreSQL事务内应用迁移并导入，拒绝非空目标而不清空它。逐字段核对全部用户ID、凭证摘要、昵称、同意版本/开关、圈子参与及各日期累计值/时间戳，并核对分页版本，输出仅有数量、备份路径及摘要。源库保持原样；失败保留备份用于排查，不自动删除源数据。较早仅身份/缺圈子表的库可导入，缺失参与默认为不参加。使用导入schema时在被忽略的连接配置中设置 PostgreSQL `options=-csearch_path=import_<对应32位ID>`，不要改写源码或公开连接凭证。
 
-最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL迁移当时的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹保留于[迁移验证](docs/verification-06-rust-postgres.md)。原生圈子本轮证据见上文；整体交付和最终持续实例仍未完成。
+最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL迁移当时的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹保留于[迁移验证](docs/verification-06-rust-postgres.md)。原生圈子证据见上文；基础持续实例已交付，整体验收仍按台账继续。
