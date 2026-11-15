@@ -74,3 +74,28 @@ Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测�
 配置`DEV_CERTIFICATE_P12`、`DEV_P12_PASSWORD`、`DEV_PROVISION_PROFILE`和`APPLE_TEAM_ID`（允许上述表格中的备用变量），确保开发描述文件包含目标iPhone的UDID，并启用HealthKit。推送新代码，在新提交运行workflow。XCTest通过且导出签名检查通过后，下载`StairClimb-development-<run_id>-<attempt>`中的`StairClimb-development.ipa`，通过受支持的安装方式安装原始签名包，避免再次重签。设备可能需要在系统中开启开发者模式，以实际iOS提示为准。
 
 本次没有访问GitHub Secret值，也没有真实Development导出结果；默认模式、导出校验和测试代码完成不代表开发证书或目标设备UDID已经配置正确。如果仍未生成，查看“Build and run every XCTest”是否通过，以及“Archive and export signed IPA”的首个错误。任何上游测试失败仍会阻止签名步骤。
+
+
+## 错误：Profile must enable the HealthKit capability
+
+该错误表示已成功解码所选描述文件，但其`Entitlements`中没有布尔值`com.apple.developer.healthkit=true`。当前工程已启用HealthKit；P12仅提供签名证书和私钥，不能给旧描述文件追加能力。校验必须保留，否则即使IPA签名导出，真机仍可能无法使用健康功能。
+
+修复步骤：
+
+1. 打开[Apple Developer Identifiers](https://developer.apple.com/account/resources/identifiers/list)，选中为爬楼梯使用的显式App ID，启用并保存HealthKit。仅需步数，不要为此开启Clinical Health Records。
+2. 在Profiles重新生成iOS App Development描述文件，选择相同App ID、现有Apple Development证书、目标iPhone设备，下载新的`.mobileprovision`。只保存App ID设置不会更新旧下载文件。
+3. 本地编码新文件：`base64 -i StairClimb_Development.mobileprovision | pbcopy`，在GitHub Repository secrets更新`DEV_PROVISION_PROFILE`。若日志显示使用备用`BUILD_PROVISION_PROFILE`，更新该变量或新建正确的`DEV_PROVISION_PROFILE`。
+4. 重新运行Development workflow。证书匹配且未过期时无须更换P12。新日志仅显示使用的Secret名称，收据也记录来源；不会打印描述文件内容。
+
+`DEV_PROVISION_PROFILE`优先于`BUILD_PROVISION_PROFILE`。如果前者已经存在，只更新后者不会生效。Ad Hoc/App Store对应更新`DIST_PROVISION_PROFILE`，并生成匹配分发类型的描述文件。
+
+若需要本地验证，只输出HealthKit布尔值，避免打印整个含设备标识的描述文件：
+
+```sh
+stairclimb_profile_plist="$(mktemp)"
+security cms -D -i StairClimb_Development.mobileprovision > "$stairclimb_profile_plist"
+/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.healthkit' "$stairclimb_profile_plist"
+rm "$stairclimb_profile_plist"
+```
+
+应输出`true`；缺键或输出false需重新生成。该操作由拥有Apple Developer权限的账号执行，CI不会自行修改账号的App ID、设备列表或签名配置。官方步骤见[启用App能力](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)及[编辑或下载描述文件](https://developer.apple.com/help/account/provisioning-profiles/edit-download-or-delete-profiles/)。

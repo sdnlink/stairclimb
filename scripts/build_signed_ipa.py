@@ -31,14 +31,23 @@ def secret(*names):
     raise SigningFailure('Missing signing configuration: ' + ' or '.join(names))
 
 
+def provisioning_profile_source(mode):
+    names = ('DEV_PROVISION_PROFILE', 'BUILD_PROVISION_PROFILE') if mode == 'development' else (
+        'DIST_PROVISION_PROFILE', 'BUILD_PROVISION_PROFILE')
+    for name in names:
+        if os.environ.get(name, '').strip():
+            return name
+    raise SigningFailure('Missing signing configuration: ' + ' or '.join(names))
+
+
 def material(mode):
     if mode == 'development':
         return (secret('DEV_CERTIFICATE_P12', 'BUILD_CERTIFICATE_P12'),
                 secret('DEV_P12_PASSWORD', 'P12_PASSWORD'),
-                secret('DEV_PROVISION_PROFILE', 'BUILD_PROVISION_PROFILE'))
+                secret(provisioning_profile_source(mode)))
     return (secret('DIST_CERTIFICATE_P12', 'BUILD_CERTIFICATE_P12'),
             secret('DIST_P12_PASSWORD', 'P12_PASSWORD'),
-            secret('DIST_PROVISION_PROFILE', 'BUILD_PROVISION_PROFILE'))
+            secret(provisioning_profile_source(mode)))
 
 
 def decode_file(value, path):
@@ -69,7 +78,12 @@ def validate_profile(profile, team, mode, now=None):
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle):
         raise SigningFailure('Profile must contain an explicit App ID, not a wildcard')
     if entitlements.get('com.apple.developer.healthkit') is not True:
-        raise SigningFailure('Profile must enable the HealthKit capability for this App ID')
+        raise SigningFailure(
+            'Profile is missing Entitlements.com.apple.developer.healthkit=true. '
+            'Enable HealthKit for the matching explicit App ID in Apple Developer, '
+            'regenerate/download a profile for this signing mode and registered devices, '
+            'then replace the selected GitHub provisioning-profile secret with its base64. '
+            'Changing the P12 or enabling HealthKit only in Xcode does not update an existing profile.')
     if profile.get('ProvisionsAllDevices'):
         raise SigningFailure('Enterprise profiles are not supported by these export modes')
     debug = entitlements.get('get-task-allow') is True
@@ -145,6 +159,9 @@ def build(mode, output):
         team = secret('APPLE_TEAM_ID').strip()
         if not re.fullmatch('[A-Z0-9]{10}', team):
             raise SigningFailure('APPLE_TEAM_ID must be a 10-character Apple team identifier')
+        source = provisioning_profile_source(mode)
+        receipt['provisioning_profile_source'] = source
+        print('Signing mode: '+mode+'; provisioning profile source: '+source, flush=True)
         certificate, password, provision = material(mode)
         receipt['git_revision'] = private(['git','rev-parse','HEAD'], 'Read source revision').decode().strip()
         version = run('xcode-version',['xcodebuild','-version'])

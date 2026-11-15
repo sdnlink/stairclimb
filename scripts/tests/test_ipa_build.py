@@ -64,6 +64,28 @@ class IPAValidationTests(unittest.TestCase):
                 with self.subTest(mode=mode,field=field),self.assertRaises(signed.SigningFailure):
                     signed.validate_signed_entitlements(changed,value,TEAM,mode)
 
+    def test_selected_profile_secret_is_explicit_and_specific_profile_takes_priority(self):
+        with patch.dict(os.environ, {'BUILD_PROVISION_PROFILE': 'fallback'}, clear=True):
+            self.assertEqual(signed.provisioning_profile_source('development'), 'BUILD_PROVISION_PROFILE')
+            with patch.dict(os.environ, {'DEV_PROVISION_PROFILE': 'specific'}):
+                self.assertEqual(signed.provisioning_profile_source('development'), 'DEV_PROVISION_PROFILE')
+            with patch.dict(os.environ, {'DIST_PROVISION_PROFILE': 'specific'}):
+                self.assertEqual(signed.provisioning_profile_source('ad-hoc'), 'DIST_PROVISION_PROFILE')
+        with patch.dict(os.environ, {}, clear=True), self.assertRaises(signed.SigningFailure):
+            signed.provisioning_profile_source('development')
+
+    def test_missing_healthkit_explains_regeneration_instead_of_bypassing_validation(self):
+        value = profile('development')
+        value['Entitlements'].pop('com.apple.developer.healthkit')
+        with self.assertRaises(signed.SigningFailure) as caught:
+            signed.validate_profile(value, TEAM, 'development')
+        message = str(caught.exception)
+        self.assertIn('com.apple.developer.healthkit=true', message)
+        self.assertIn('regenerate/download', message)
+        self.assertIn('GitHub', message)
+        self.assertNotIn(TEAM, message)
+        self.assertNotIn(PROFILE_ID, message)
+
     def test_material_fallback_and_missing_credentials(self):
         with patch.dict(os.environ,{'BUILD_CERTIFICATE_P12':'base-cert','BUILD_PROVISION_PROFILE':'base-profile',
                                     'P12_PASSWORD':'base-password'},clear=True):
