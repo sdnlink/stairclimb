@@ -153,12 +153,14 @@ private final class MockSocialAPI: APIRequesting {
     var nickname = "小楼"
     var calls: [APIRequest] = []
     var fail: NetworkFailure?
+    var failPaths: [String: NetworkFailure] = [:]
     var suspendSteps = false
     var pendingStep: CheckedContinuation<APIEnvelope, Error>?
     var page = 0
     func send(_ request: APIRequest, token: String?) async throws -> APIEnvelope {
         calls.append(request)
         if let fail { throw fail }
+        if let failure = failPaths[request.path] { throw failure }
         let user = { NetworkTestData.user(sharing: self.sharing, revision: self.revision, nickname: self.nickname) }
         if request.path == "/v1/auth/login" { sharing = false; revision = 0; return NetworkTestData.envelope(["user": user(), "token": NetworkTestData.token, "refresh_token": String(repeating: "r", count: 43), "expires_in": 900]) }
         if request.path == "/v1/auth/logout-all" { return NetworkTestData.envelope(["completed": true]) }
@@ -415,12 +417,75 @@ final class SocialModelTests: XCTestCase {
 
     func testOfflineBoardRetainsDateAndMarksCacheAsStale() async {
         XCTAssertFalse(model.entries.isEmpty)
+        let successfulRefresh = model.boardUpdatedAt
+        now.addTimeInterval(60)
         api.fail = .transport
         await model.refresh()
         XCTAssertFalse(model.entries.isEmpty)
         XCTAssertEqual(model.boardDate, "2026-11-14")
         XCTAssertTrue(model.boardIsStale)
-        XCTAssertNotNil(model.boardUpdatedAt)
+        XCTAssertEqual(model.boardUpdatedAt, successfulRefresh)
+        api.fail = nil
+        await model.refresh()
+        XCTAssertEqual(model.boardUpdatedAt, now)
+        XCTAssertFalse(model.boardIsStale)
+    }
+
+    func testFailedSyncRetainsLastAcknowledgedTimeAndMarksPreviousResult() async {
+        await model.sync(local: local)
+        let successfulSync = model.syncedAt
+        XCTAssertEqual(successfulSync, now)
+        XCTAssertFalse(model.syncIsStale)
+        now.addTimeInterval(60)
+        health.reading = .total(250)
+        api.fail = .transport
+        await model.sync(local: local)
+        XCTAssertEqual(model.syncedAt, successfulSync)
+        XCTAssertEqual(model.syncedSteps, 101)
+        XCTAssertTrue(model.syncIsStale)
+        api.fail = nil
+        await model.sync(local: local)
+        XCTAssertEqual(model.syncedAt, now)
+        XCTAssertEqual(model.syncedSteps, 250)
+        XCTAssertFalse(model.syncIsStale)
+    }
+
+    func testAcknowledgedSyncRemainsSuccessfulWhenBoardRefreshFails() async {
+        let previousBoard = model.boardUpdatedAt
+        now.addTimeInterval(60)
+        api.failPaths["/v1/leaderboard"] = .transport
+        await model.sync(local: local)
+        XCTAssertEqual(model.syncedAt, now)
+        XCTAssertEqual(model.syncedSteps, 101)
+        XCTAssertFalse(model.syncIsStale)
+        XCTAssertEqual(model.boardUpdatedAt, previousBoard)
+        XCTAssertTrue(model.boardIsStale)
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertNotNil(model.message)
+    }
+
+    func testBackgroundMarksCachesAndPrivacyAndMidnightRemoveSuccessTimes() async {
+        await model.sync(local: local)
+        model.markCached()
+        XCTAssertTrue(model.boardIsStale)
+        XCTAssertTrue(model.syncIsStale)
+        XCTAssertNotNil(model.syncedAt)
+        now.addTimeInterval(86_400)
+        model.dayChangedIfNeeded()
+        XCTAssertNil(model.syncedAt)
+        XCTAssertNil(model.boardUpdatedAt)
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertFalse(model.syncIsStale)
+        // Explicit privacy clears the same-day success, rather than keeping a
+        // visible upload claim while revocation is pending offline.
+        now = NetworkTestData.now
+        model.dayChangedIfNeeded()
+        await model.sync(local: local)
+        XCTAssertNotNil(model.syncedAt)
+        api.fail = .transport
+        await model.privacy(.revoke)
+        XCTAssertNil(model.syncedAt)
+        XCTAssertNil(model.boardUpdatedAt)
     }
 
     func testCredentialRestoreDoesNotRequireAnotherRegistration() async {

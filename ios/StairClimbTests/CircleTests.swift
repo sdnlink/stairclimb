@@ -40,6 +40,7 @@ private final class CircleAPI: APIRequesting {
     var ownPosition = 1
     var now = NetworkTestData.now
     var failure: NetworkFailure?
+    var failAfterReplyPath: String?
     var overrides: [String: Any] = [:]
     var holdPath: String?
     var pending: CheckedContinuation<Void, Never>?
@@ -112,6 +113,7 @@ private final class CircleAPI: APIRequesting {
         requests.append(request)
         if let failure { throw failure }
         let response = try reply(request)
+        if failAfterReplyPath == request.path { throw NetworkFailure.transport }
         if holdPath == request.path {
             holdPath = nil
             await withCheckedContinuation { pending = $0 }
@@ -185,17 +187,25 @@ final class CircleStateTests: XCTestCase {
 
     func testOfflineClearsMembershipAndRefreshNeverReplaysEnable() async {
         await joined()
+        let successfulRefresh = model.circleUpdatedAt
+        api.now.addTimeInterval(30)
         api.failure = .transport
         await model.refreshCircle()
         XCTAssertNil(model.circle)
         XCTAssertNotNil(model.circleError)
+        XCTAssertEqual(model.circleUpdatedAt, successfulRefresh)
+        XCTAssertTrue(model.circleIsStale)
+        XCTAssertTrue(model.circleMembers.isEmpty)
         api.failure = nil
         await model.refreshCircle()
         XCTAssertEqual(api.requests.filter { $0.method == "PUT" }.count, 1)
         XCTAssertNil(model.circleError)
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
+        XCTAssertFalse(model.circleIsStale)
         model.dayChanged()
         XCTAssertNil(model.circle)
         XCTAssertTrue(model.circleMembers.isEmpty)
+        XCTAssertNil(model.circleUpdatedAt)
     }
 
     func testAllPagesAndNonFirstPageLocation() async {
@@ -311,8 +321,10 @@ final class CircleStateTests: XCTestCase {
         api.now = ISO8601DateFormatter().date(from: "2026-11-14T16:00:00Z")!
         model.dayChangedIfNeeded()
         XCTAssertNil(model.circle)
+        XCTAssertNil(model.circleUpdatedAt)
         release(); await oldRead.value
         XCTAssertNil(model.circle)
+        XCTAssertNil(model.circleUpdatedAt)
         let reader = CircleHealthReader(); reader.steps = 0
         defaults.set(true, forKey: "healthAccessRequestAttempted")
         let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
@@ -321,11 +333,13 @@ final class CircleStateTests: XCTestCase {
         XCTAssertEqual(reader.queriedDays, ["2026-11-15"])
         XCTAssertEqual(model.circle?.date, "2026-11-15")
         XCTAssertEqual(model.circle?.minSteps, 0)
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
         XCTAssertEqual(api.requests.filter { $0.path == "/v1/me/circle-participation" }.count, 1)
     }
 
     func testSyncHidesOldCircleBeforeSendingCrossBandSnapshot() async {
         await joined()
+        let successfulRefresh = model.circleUpdatedAt
         let reader = CircleHealthReader()
         defaults.set(true, forKey: "healthAccessRequestAttempted")
         let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
@@ -335,10 +349,114 @@ final class CircleStateTests: XCTestCase {
         await waitUntilHeld()
         XCTAssertNil(model.circle)
         XCTAssertTrue(model.circleMembers.isEmpty)
+        XCTAssertEqual(model.circleUpdatedAt, successfulRefresh)
+        XCTAssertTrue(model.circleIsStale)
+        XCTAssertTrue(model.circleNotice?.contains("正在同步") == true)
         release(); await syncing.value
+        XCTAssertTrue(model.circleNotice?.contains("999步跨入1000–1999步") == true)
+        XCTAssertTrue(model.circleNotice?.contains("自动迁圈") == true)
         await model.refreshCircle()
         XCTAssertEqual(model.circle?.minSteps, 1000)
         XCTAssertEqual(model.circleMembers.first?.steps, 1000)
         XCTAssertEqual(reader.queriedDays, ["2026-11-14"])
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
+        XCTAssertFalse(model.circleIsStale)
+    }
+
+    func testBackgroundAndInFlightRefreshKeepTimestampAndMarkCached() async {
+        await joined()
+        let successfulRefresh = model.circleUpdatedAt
+        model.markCached()
+        XCTAssertTrue(model.circleIsStale)
+        XCTAssertEqual(model.circleUpdatedAt, successfulRefresh)
+        api.now.addTimeInterval(30)
+        api.holdPath = "/v1/circles/current/members"
+        let reading = Task { await model.refreshCircle() }
+        await waitUntilHeld()
+        XCTAssertTrue(model.circleIsStale)
+        XCTAssertEqual(model.circleUpdatedAt, successfulRefresh)
+        release(); await reading.value
+        XCTAssertFalse(model.circleIsStale)
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
+    }
+
+    func testExternalMigrationReplacesMembersAndExplainsNewBand() async {
+        await joined()
+        api.steps = 1000
+        api.now.addTimeInterval(30)
+        await model.refreshCircle()
+        XCTAssertEqual(model.circle?.minSteps, 1000)
+        XCTAssertTrue(model.circleMembers.allSatisfy { $0.steps == 1000 })
+        XCTAssertTrue(model.circleNotice?.contains("0–999步 → 1000–1999步") == true)
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
+    }
+
+    func testLostUploadResponseKeepsPreviousSyncTimeWithoutClaimingMigrationSuccess() async {
+        await joined()
+        let reader = CircleHealthReader(); reader.steps = 999
+        defaults.set(true, forKey: "healthAccessRequestAttempted")
+        let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
+                                  clock: { self.api.now })
+        await model.sync(local: local); await model.refreshCircle()
+        let previousSync = model.syncedAt, previousRefresh = model.circleUpdatedAt
+        api.now.addTimeInterval(30)
+        reader.steps = 1000
+        api.failAfterReplyPath = "/v1/me/steps"
+        await model.sync(local: local)
+        XCTAssertEqual(api.steps, 1000) // The server accepted it; its response was lost.
+        XCTAssertEqual(model.syncedAt, previousSync)
+        XCTAssertEqual(model.syncedSteps, 999)
+        XCTAssertTrue(model.syncIsStale)
+        XCTAssertEqual(model.circleUpdatedAt, previousRefresh)
+        XCTAssertTrue(model.circleIsStale)
+        XCTAssertNil(model.circle)
+        XCTAssertTrue(model.circleNotice?.contains("上传结果未确认") == true)
+        api.failAfterReplyPath = nil
+        await model.refreshCircle()
+        XCTAssertEqual(model.circle?.minSteps, 1000)
+        XCTAssertEqual(model.circleUpdatedAt, api.now)
+        XCTAssertFalse(model.circleIsStale)
+        XCTAssertEqual(model.syncedAt, previousSync)
+    }
+
+    func testMidnightClearsLastSuccessEvenWhenOfflineAlreadyRemovedChannel() async {
+        await joined()
+        api.failure = .transport
+        await model.refreshCircle()
+        XCTAssertNil(model.circle)
+        XCTAssertNotNil(model.circleUpdatedAt)
+        api.now = ISO8601DateFormatter().date(from: "2026-11-14T16:00:00Z")!
+        model.dayChangedIfNeeded()
+        XCTAssertNil(model.circleUpdatedAt)
+        XCTAssertNil(model.boardUpdatedAt)
+        XCTAssertFalse(model.circleIsStale)
+        XCTAssertTrue(model.circleNotice?.contains("新一天") == true)
+        await model.refreshCircle()
+        XCTAssertNil(model.circleUpdatedAt)
+    }
+
+    func testPendingRevokeAndLogoutRemoveCircleSuccessImmediately() async {
+        await joined()
+        XCTAssertNotNil(model.circleUpdatedAt)
+        api.failure = .transport
+        await model.privacy(.revoke)
+        XCTAssertNil(model.circleUpdatedAt)
+        XCTAssertTrue(model.circleMembers.isEmpty)
+        api.failure = nil
+        await model.privacy(.revoke)
+        // Recreate a separate saved session for the logout path.
+        api.participating = true; api.sharing = true
+        var saved = try! NetworkVault(store: store).load()
+        saved.identity?.user = ServerUser(id: "mock-user", nickname: "小楼", sharingEnabled: true, consentRevision: api.revision)
+        saved.uploadAllowed = true
+        try! NetworkVault(store: store).save(saved)
+        let restored = SocialModel(vault: NetworkVault(store: store), defaults: defaults,
+                                   clock: { self.api.now }, clientFactory: { _ in self.api })
+        await restored.refresh(); await restored.refreshCircle()
+        XCTAssertNotNil(restored.circleUpdatedAt)
+        api.failure = .transport
+        await restored.logout()
+        XCTAssertNil(restored.circleUpdatedAt)
+        XCTAssertTrue(restored.circleMembers.isEmpty)
     }
 }

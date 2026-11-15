@@ -240,6 +240,29 @@ def check_project(root):
                      'testMidnightInvalidatesHeldResponseAndForegroundReadsBeforeRegrouping',
                      'testSyncHidesOldCircleBeforeSendingCrossBandSnapshot']:
         require(f'func {scenario}(' in circle_tests, f'Missing circle XCTest scenario: {scenario}')
+    progress_view = (ios/'StairClimb/Views/ProgressViewScreen.swift').read_text()
+    for source, fields in [(progress_view, ['snapshot.readAt', 'model.snapshotIsStale']),
+                           (social_view, ['model.syncedAt', 'model.syncIsStale', 'model.boardUpdatedAt', 'model.boardIsStale']),
+                           (circle_view, ['model.circleUpdatedAt', 'model.circleIsStale', 'model.circleNotice'])]:
+        for field in fields:
+            require(field in source, f'Missing freshness display binding: {field}')
+        require('上次成功' in source and '缓存' in source, 'Missing success/cache disclosure')
+    require('else { model.markCached() }' in progress_view and 'else { social.markCached() }' in social_view,
+            'Background must mark local and network caches')
+    for filename, scenarios in {
+        'LocalAppModelTests.swift': ['testCachedReadKeepsSuccessTimeUntilNewResultAndClearsAtMidnight'],
+        'NetworkTests.swift': ['testFailedSyncRetainsLastAcknowledgedTimeAndMarksPreviousResult',
+                             'testAcknowledgedSyncRemainsSuccessfulWhenBoardRefreshFails',
+                             'testBackgroundMarksCachesAndPrivacyAndMidnightRemoveSuccessTimes'],
+        'CircleTests.swift': ['testBackgroundAndInFlightRefreshKeepTimestampAndMarkCached',
+                            'testExternalMigrationReplacesMembersAndExplainsNewBand',
+                            'testLostUploadResponseKeepsPreviousSyncTimeWithoutClaimingMigrationSuccess',
+                            'testMidnightClearsLastSuccessEvenWhenOfflineAlreadyRemovedChannel',
+                            'testPendingRevokeAndLogoutRemoveCircleSuccessImmediately']
+    }.items():
+        source = (ios/'StairClimbTests'/filename).read_text()
+        for scenario in scenarios:
+            require(f'func {scenario}(' in source, f'Missing freshness XCTest scenario: {scenario}')
     for config in configurations(tests).values():
         settings = config['buildSettings']
         require(settings.get('TEST_HOST') == '$(BUILT_PRODUCTS_DIR)/StairClimb.app/StairClimb', 'Wrong XCTest host')
@@ -283,7 +306,7 @@ def check_project(root):
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
             'PASS shared scheme, XCTest host/dependency, source/resource membership, icon',
             'PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission',
-            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, foreground/midnight and XCTest wiring',
+            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, freshness display/cache lifecycle and XCTest wiring',
             'PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone',
             'LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation']
 

@@ -49,6 +49,7 @@ struct ProgressViewScreen: View {
         .task { await model.activate() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.activate() } }
+            else { model.markCached() }
         }
         .onReceive(datePulse) { _ in
             guard scenePhase == .active else { return }
@@ -110,8 +111,12 @@ struct ProgressViewScreen: View {
             Label(statusTitle, systemImage: statusSymbol).font(.headline)
             Text(statusDetail).font(.subheadline).foregroundStyle(.secondary)
             if let snapshot = model.snapshot {
-                Text("本机读取于上海时间 \(ShanghaiDay.timeLabel(for: snapshot.readAt))\(model.phase == .failed ? " · 上次结果，非最新" : "")")
+                Text("上次成功读取 · 上海 \(ShanghaiDay.timeLabel(for: snapshot.readAt))")
                     .font(.caption).foregroundStyle(.secondary)
+                if model.snapshotIsStale {
+                    Text("本机缓存，尚未重新读取成功；当前步数可能已变化。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
             if model.phase != .unavailable {
                 HStack {

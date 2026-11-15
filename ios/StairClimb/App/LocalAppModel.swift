@@ -19,6 +19,7 @@ final class LocalAppModel: ObservableObject {
     @Published private(set) var snapshot: LocalSnapshot?
     @Published private(set) var phase: ReadingPhase = .needsRequest
     @Published private(set) var readingError: String?
+    @Published private(set) var snapshotIsStale = false
 
     var hasRequestedHealthAccess: Bool { defaults.bool(forKey: Self.attemptedKey) }
 
@@ -61,6 +62,7 @@ final class LocalAppModel: ObservableObject {
 
     func activate() async {
         updateDayIfNeeded()
+        markCached()
         guard reader.isAvailable else { phase = .unavailable; return }
         guard defaults.bool(forKey: Self.attemptedKey) else { return }
         await refresh()
@@ -69,6 +71,7 @@ final class LocalAppModel: ObservableObject {
     func requestHealthAccess() async {
         guard !requestingAccess, phase != .loading else { return }
         updateDayIfNeeded()
+        markCached()
         guard reader.isAvailable else { phase = .unavailable; return }
         requestingAccess = true
         phase = .requesting
@@ -87,6 +90,7 @@ final class LocalAppModel: ObservableObject {
 
     func refresh() async {
         updateDayIfNeeded()
+        markCached()
         guard reader.isAvailable else { phase = .unavailable; return }
         guard defaults.bool(forKey: Self.attemptedKey) else { phase = .needsRequest; return }
         guard phase != .loading, phase != .requesting else { return }
@@ -108,6 +112,7 @@ final class LocalAppModel: ObservableObject {
                 snapshot = LocalSnapshot(day: queriedDay, progress: try StepRules.progress(steps: 0), readAt: clock())
                 phase = .noReadableData
             }
+            snapshotIsStale = false
         } catch {
             guard ticket == generation else { return }
             if !queriedDay.contains(clock()) { await activate(); return }
@@ -117,6 +122,10 @@ final class LocalAppModel: ObservableObject {
         }
     }
 
+    func markCached() {
+        if snapshot != nil { snapshotIsStale = true }
+    }
+
     @discardableResult
     func updateDayIfNeeded() -> Bool {
         let current = ShanghaiDay(containing: clock())
@@ -124,6 +133,7 @@ final class LocalAppModel: ObservableObject {
         generation = UUID()
         day = current
         snapshot = nil
+        snapshotIsStale = false
         readingError = nil
         phase = reader.isAvailable ? .needsRequest : .unavailable
         return true

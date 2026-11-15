@@ -98,8 +98,13 @@ struct SocialView: View {
             }
             Button("读取今日步数并同步") { Task { await model.sync(local: local) } }
                 .disabled(model.busy || !model.canUpload)
-            if let date = model.syncedDate, let steps = model.syncedSteps {
-                Text("服务器已确认 \(date) · \(steps)步").font(.caption).foregroundStyle(.green)
+            if let date = model.syncedDate, let steps = model.syncedSteps, let time = model.syncedAt {
+                Text("上次成功同步 \(date) · \(steps)步 · 上海 \(ShanghaiDay.timeLabel(for: time))")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.syncIsStale {
+                    Text("上次成功记录供参考，当前数据尚未重新同步确认。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             } else {
                 Text("尚无本次确认的今日同步结果。无可读健康数据或读取失败时不上传临时0值。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -111,13 +116,17 @@ struct SocialView: View {
 
     private var leaderboard: some View {
         Section {
+            if let updated = model.boardUpdatedAt {
+                Text("上次成功刷新 · 上海 \(ShanghaiDay.timeLabel(for: updated))")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.boardIsStale {
+                    Text(model.boardDate == nil ? "旧列表已失效并清除，请重新刷新。" : "缓存列表，尚未重新刷新成功；排名可能已变化。")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
             if let date = model.boardDate {
                 Text("\(date) · 上海 Asia/Shanghai · 公开用户\(model.total)人")
                     .font(.caption).foregroundStyle(.secondary)
-                if let updated = model.boardUpdatedAt {
-                    Text("\(model.boardIsStale ? "缓存，尚未刷新成功" : "服务器读取") · 上海 \(ShanghaiDay.timeLabel(for: updated))")
-                        .font(.caption).foregroundStyle(model.boardIsStale ? .orange : .secondary)
-                }
                 ForEach(model.entries) { entry in
                     HStack(spacing: 12) {
                         Text("\(entry.rank ?? entry.position)").font(.headline.monospacedDigit()).frame(minWidth: 25)
@@ -187,6 +196,7 @@ struct AppShell: View {
         .task { await social.foreground(local: local) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await social.foreground(local: local) } }
+            else { social.markCached() }
         }
         .onChange(of: local.day) { _, _ in
             social.dayChanged()

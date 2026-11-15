@@ -76,6 +76,19 @@ struct CircleView: View {
                         Button("退出圈子并撤回共享", role: .destructive) { leaving = true }
                     }
                 }
+                if model.circleUpdatedAt != nil || model.circleNotice != nil {
+                    Section("刷新与匹配状态") {
+                        if let updated = model.circleUpdatedAt {
+                            Text("上次成功刷新 · 上海 \(ShanghaiDay.timeLabel(for: updated))")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if model.circleIsStale {
+                                Text(model.circle == nil ? "上次结果已过期，旧圈友已隐藏；请刷新确认今日频道。" : "缓存圈友，尚未重新刷新成功；成员可能已变化。")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
+                        }
+                        if let notice = model.circleNotice { Text(notice).font(.subheadline) }
+                    }
+                }
                 if model.busy { HStack { ProgressView(); Text("正在确认服务器状态") } }
                 if let error = model.circleError { Section("未完成") { Text(error); Text("请检查网络后刷新，旧频道不会当作今日结果。") } }
                 if let message = model.message { Section("操作状态") { Text(message).font(.caption) } }

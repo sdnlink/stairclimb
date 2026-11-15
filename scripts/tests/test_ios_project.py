@@ -214,6 +214,39 @@ class IOSProjectChecks(unittest.TestCase):
         with self.assertRaisesRegex(CheckFailure, 'Duplicate project key'):
             openstep('{ a = 1; a = 2; }')
 
+    def test_missing_success_time_or_cache_binding_is_rejected(self):
+        for filename, binding in [
+            ('ProgressViewScreen.swift', 'model.snapshotIsStale'),
+            ('SocialView.swift', 'model.syncedAt'),
+            ('SocialView.swift', 'model.syncIsStale'),
+            ('SocialView.swift', 'model.boardUpdatedAt'),
+            ('SocialView.swift', 'model.boardIsStale'),
+            ('CircleView.swift', 'model.circleUpdatedAt'),
+            ('CircleView.swift', 'model.circleIsStale'),
+            ('CircleView.swift', 'model.circleNotice'),
+        ]:
+            with self.subTest(binding=binding):
+                path = self.root/'ios/StairClimb/Views'/filename
+                original = path.read_text()
+                path.write_text(original.replace(binding, 'unboundValue'))
+                self.rejects('Missing freshness display binding')
+                path.write_text(original)
+
+    def test_background_cache_marking_is_required(self):
+        for filename, action in [('ProgressViewScreen.swift', 'else { model.markCached() }'),
+                                 ('SocialView.swift', 'else { social.markCached() }')]:
+            with self.subTest(filename=filename):
+                path = self.root/'ios/StairClimb/Views'/filename
+                original = path.read_text()
+                path.write_text(original.replace(action, ''))
+                self.rejects('Background must mark local and network caches')
+                path.write_text(original)
+
+    def test_missing_freshness_failure_path_test_is_rejected(self):
+        path = self.root/'ios/StairClimbTests/NetworkTests.swift'
+        self.replace(path, 'func testAcknowledgedSyncRemainsSuccessfulWhenBoardRefreshFails(', 'func removed(')
+        self.rejects('Missing freshness XCTest scenario')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,59 @@
+SOURCE_BASE: c56200a6b474eaff74981f9469698bf7ff56650b + ios_freshness working diff
+COMMAND: sha256sum -c - (31 unchanged entries from docs/validation/pool-timing-sources.sha256; README excluded because this module updates it)
+backend/Cargo.toml: 成功
+backend/Cargo.lock: 成功
+backend/development.env.example: 成功
+backend/src/auth.rs: 成功
+backend/src/bin/test_server.rs: 成功
+backend/src/domain.rs: 成功
+backend/src/http.rs: 成功
+backend/src/lib.rs: 成功
+backend/src/mail.rs: 成功
+backend/src/main.rs: 成功
+backend/src/pool.rs: 成功
+backend/src/storage.rs: 成功
+backend/src/tls.rs: 成功
+backend/migrations/001_initial.sql: 成功
+backend/migrations/002_email_auth.sql: 成功
+backend/migrations/003_data_access.sql: 成功
+backend/tests/pg_fixture.py: 成功
+backend/tests/test_circles.py: 成功
+backend/tests/test_data_access.py: 成功
+backend/tests/test_email_auth.py: 成功
+backend/tests/test_https.py: 成功
+backend/tests/test_identity.py: 成功
+backend/tests/test_launcher.py: 成功
+backend/tests/test_migration.py: 成功
+backend/tests/test_social.py: 成功
+scripts/benchmark_data_access.py: 成功
+scripts/postgres_dev.py: 成功
+scripts/import_sqlite.py: 成功
+scripts/run_backend.sh: 成功
+docs/API.md: 成功
+docs/DATA_ACCESS.md: 成功
+EXIT: 0
+COMMAND: git diff --no-ext-diff --no-textconv --exit-code HEAD -- backend scripts/run_backend.sh scripts/postgres_dev.py scripts/dev_tls.py scripts/smtp_capture.py scripts/verify_ios_api.py scripts/verify_ios_circles.py scripts/import_sqlite.py docs/API.md docs/EMAIL_AUTH.md docs/HTTPS.md
+EXIT: 0
+COMMAND: python3 scripts/verify_ios_api.py
+PASS verified HTTPS: 3 real email registrations, captured SMTP proofs, verification/replay, login, private account email, no implicit sharing, anonymous bypass rejected
+PASS verified HTTPS: 3 independent users, explicit consent, cumulative/idempotent upload, 3-page traversal, non-first-page me, rename/invalidation, no-record zero, identity tampering
+PASS verified HTTPS: Shanghai midnight, new-day zero, old-date rejection, revoke barrier, delayed enable/upload refusal
+PASS verified HTTPS: delete all shared days, close sharing, stale-delete refusal, delete account/credential invalidation, restart persistence
+PASS verified HTTPS: service storage outage returns 503; no success fabrication
+PASS verified HTTPS: refresh rotation/replay, reset from captured mail, old sessions invalid, reset replay, re-login without sharing, logout-all/revocation, account/email deletion
+PASS verified HTTPS: SMTP failure is an error, no fake delivery or verification
+CLEANUP: ephemeral TLS/SMTP ports closed, temporary private mail/certificates and isolated PostgreSQL schema removed; no secrets printed
+LIMIT: verifies real server contracts used by iOS; does not execute URLSession, SwiftUI, Swift tests, or HealthKit
+EXIT: 0
+COMMAND: python3 scripts/verify_ios_circles.py
+PASS HTTPS circles: 3 verified email users, independent sharing/participation consent, exact steps, 999/1000 separation, real small circles, public fields only
+PASS HTTPS circles: complete pagination, non-first-page me, bidirectional migration, old cursor refusal, duplicate snapshot idempotence
+PASS HTTPS circles: revoke/version barrier, no implicit rejoin, delete all steps closes participation, account deletion, restart persistence, other member retained
+PASS HTTPS circles: Shanghai midnight zero/regroup, yesterday cursor/upload refused, history retained, no-record zero member, actual database outage returns 503 and recovers
+CLEANUP: temporary Rust/TLS/SMTP ports, private mail/certificates and isolated PostgreSQL schema removed
+LIMIT: server contract verification only; Swift build, XCTest, device trust, HealthKit and UI remain unexecuted on Linux
+EXIT: 0
+REUSED unchanged-source historical log: docs/validation/backend-current-revalidation-focused.txt SHA256 19e94ad8906249da4db8090454a7e945101aefb03d752cd61545bd13fc738808
+REUSED unchanged-source historical log: docs/validation/backend-current-revalidation-regression.txt SHA256 7494bf286dfd04bea38af50d93b3ee054ff6c86a047de5afe3190ad533f21442
+REUSED unchanged-source historical log: docs/validation/pool-timing-regression.txt SHA256 da65563602c41dd2dfa7808fb9ad8bbc5049b413746932f105ed25c37bcae8fb
+LIMIT: Rust/PostgreSQL/HTTPS/SMTP contract probes execute on Linux; no URLSession/Swift/XCTest/HealthKit/UI execution. Three fixed delivery commands remain unchanged for Watcher.

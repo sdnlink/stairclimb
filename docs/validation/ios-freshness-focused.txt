@@ -1,0 +1,23 @@
+SOURCE_BASE: c56200a6b474eaff74981f9469698bf7ff56650b + ios_freshness working diff
+COMMAND: python3 scripts/check_ios_project.py
+PASS project reference graph: 97 objects; 18 app + 7 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, freshness display/cache lifecycle and XCTest wiring
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+EXIT: 0
+COMMAND: python3 -m unittest scripts.tests.test_ios_project.IOSProjectChecks.test_missing_success_time_or_cache_binding_is_rejected scripts.tests.test_ios_project.IOSProjectChecks.test_background_cache_marking_is_required scripts.tests.test_ios_project.IOSProjectChecks.test_missing_freshness_failure_path_test_is_rejected -v
+test_missing_success_time_or_cache_binding_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_success_time_or_cache_binding_is_rejected) ... ok
+test_background_cache_marking_is_required (scripts.tests.test_ios_project.IOSProjectChecks.test_background_cache_marking_is_required) ... ok
+test_missing_freshness_failure_path_test_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_freshness_failure_path_test_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.095s
+
+OK
+EXIT: 0
+LIMIT: Linux structure/mutation checks only. No Swift compile, XCTest execution, signing, system trust, HealthKit or UI validation.
+FINAL INPUT CHECK: LC_ALL=C sha256sum -c docs/validation/ios-freshness-sources.sha256
+MATCHING_INPUTS: 76
+EXIT: 0

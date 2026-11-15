@@ -16,6 +16,8 @@ final class SocialModel: ObservableObject {
     @Published private(set) var snapshot: String?
     @Published private(set) var syncedDate: String?
     @Published private(set) var syncedSteps: Int?
+    @Published private(set) var syncedAt: Date?
+    @Published private(set) var syncIsStale = false
     @Published private(set) var authenticated = false
     @Published private(set) var accountEmail: String?
     @Published private(set) var authMessage: String?
@@ -26,6 +28,9 @@ final class SocialModel: ObservableObject {
     @Published private(set) var circleVersion: String?
     @Published private(set) var circleParticipating: Bool?
     @Published private(set) var circleError: String?
+    @Published private(set) var circleUpdatedAt: Date?
+    @Published private(set) var circleIsStale = false
+    @Published private(set) var circleNotice: String?
 
     let pageSize = 20
     private let vault: NetworkVault
@@ -39,12 +44,14 @@ final class SocialModel: ObservableObject {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var privacyRunning = false
     private var failedInitialLoad = false
+    private var currentDay: ShanghaiDay
 
     init(vault: NetworkVault, defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init,
          clientFactory: @escaping @MainActor (URL) -> any APIRequesting = { APIClient(baseURL: $0) }) {
         self.vault = vault
         self.defaults = defaults
         self.clock = clock
+        self.currentDay = ShanghaiDay(containing: clock())
         self.clientFactory = clientFactory
         do {
             state = try vault.load()
@@ -88,21 +95,36 @@ final class SocialModel: ObservableObject {
         }
     }
 
-    private func clearBoard() {
+    private func clearBoard(preservingSuccess: Bool = false, circleNotice: String? = nil) {
         entries = []; boardDate = nil; snapshot = nil; nextCursor = nil; total = 0
-        boardUpdatedAt = nil; boardIsStale = false
-        clearCircle()
+        if !preservingSuccess { boardUpdatedAt = nil }
+        boardIsStale = boardUpdatedAt != nil
+        clearCircle(preservingSuccess: preservingSuccess, notice: circleNotice)
     }
 
-    private func clearCircle() {
+    private func clearCircle(preservingSuccess: Bool = false, notice: String? = nil) {
         circle = nil; circleMembers = []; circleTotal = 0; circleNext = nil
         circleVersion = nil; circleParticipating = nil; circleError = nil
+        if !preservingSuccess { circleUpdatedAt = nil }
+        circleIsStale = circleUpdatedAt != nil
+        circleNotice = notice
+    }
+
+    private func clearSync() {
+        syncedDate = nil; syncedSteps = nil; syncedAt = nil; syncIsStale = false
+    }
+
+    func markCached() {
+        if boardUpdatedAt != nil { boardIsStale = true }
+        if circleUpdatedAt != nil { circleIsStale = true }
+        if syncedAt != nil { syncIsStale = true }
     }
 
     func dayChanged() {
+        currentDay = ShanghaiDay(containing: clock())
         epoch = UUID()
-        clearBoard()
-        syncedDate = nil; syncedSteps = nil
+        clearBoard(circleNotice: "上海00:00开始新一天，昨日圈友已清除；重新读取今日步数后自动匹配。")
+        clearSync()
     }
 
     private func checkDay(_ response: APIEnvelope) throws {
@@ -133,10 +155,10 @@ final class SocialModel: ObservableObject {
             authenticated = false
             try? persist()
             clearBoard()
+            clearSync()
         }
-        if failure == .pageChanged { clearBoard() }
+        if failure == .pageChanged { clearBoard(preservingSuccess: true, circleNotice: circleNotice) }
         if failure == .dayChanged { dayChanged() }
-        syncedDate = nil; syncedSteps = nil
         message = failure.localizedDescription
     }
 
@@ -165,7 +187,11 @@ final class SocialModel: ObservableObject {
     private func acceptUser(_ response: APIEnvelope) throws {
         guard let user = response.user, user.id == state.identity?.user.id else { throw NetworkFailure.response }
         state.identity?.user = user
-        if !user.sharingEnabled { state.uploadAllowed = false }
+        if !user.sharingEnabled {
+            state.uploadAllowed = false
+            clearSync()
+            clearCircle(notice: "共享已关闭，旧圈友已清除；重新共享和参加均须主动同意。")
+        }
         try persist()
         authenticated = !isLegacyIdentity && state.identity?.refreshUncertain != true
     }
@@ -230,7 +256,7 @@ final class SocialModel: ObservableObject {
                 try persist()
                 authenticated = true
                 accountEmail = nil
-                clearBoard(); syncedDate = nil; syncedSteps = nil
+                clearBoard(); clearSync()
                 authMessage = "已登录，昵称用于公开展示。健康共享和圈子参与须单独主动同意。"
             } else if action.sendsMail {
                 guard response.message != nil else { throw NetworkFailure.response }
@@ -243,7 +269,7 @@ final class SocialModel: ObservableObject {
                     defaults.set(true, forKey: Self.uploadStopKey)
                     authenticated = false
                     if !isLegacyIdentity { state.identity?.refreshUncertain = true }
-                    clearBoard(); syncedDate = nil; syncedSteps = nil; accountEmail = nil
+                    clearBoard(); clearSync(); accountEmail = nil
                     try persist()
                 }
             }
@@ -280,7 +306,7 @@ final class SocialModel: ObservableObject {
         state.uploadAllowed = false; state.logoutPending = true
         defaults.set(true, forKey: Self.uploadStopKey)
         authenticated = false; accountEmail = nil
-        clearBoard(); syncedDate = nil; syncedSteps = nil
+        clearBoard(); clearSync()
         do { try persist() } catch { handle(error); return }
         privacyRunning = true
         defer { privacyRunning = false }
@@ -304,7 +330,9 @@ final class SocialModel: ObservableObject {
     private func clientReset() { client = nil; authenticated = false; accountEmail = nil }
 
     func refresh() async {
+        dayChangedIfNeeded()
         guard !busy, !privacyRunning, storageReady, state.identity != nil, state.logoutPending != true else { return }
+        if boardUpdatedAt != nil { boardIsStale = true }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -371,11 +399,16 @@ final class SocialModel: ObservableObject {
     }
 
     func sync(local: LocalAppModel) async {
+        dayChangedIfNeeded()
         guard !busy, !privacyRunning, canUpload else { return }
         busy = true
         let ticket = epoch
         defer { finish() }
-        syncedDate = nil; syncedSteps = nil
+        // Keep the last acknowledged snapshot/time when a later attempt fails.
+        // The view labels it as a previous result, never as this attempt's success.
+        if syncedAt != nil { syncIsStale = true }
+        var submitted = false
+        var acknowledged = false
         do {
             let profile = try await call(APIRequest(method: "GET", path: "/v1/me"))
             guard ticket == epoch else { return }
@@ -388,7 +421,10 @@ final class SocialModel: ObservableObject {
                   current.day.date == profile.date, current.day.contains(clock()) else { throw NetworkFailure.localData }
             // An accepted snapshot may move us to another band. Hide the old members
             // before sending, including when the upload result is lost.
-            clearCircle()
+            let previousCircle = circle
+            let target = try CircleChannel.expected(day: current.day, steps: current.progress.steps)
+            clearCircle(preservingSuccess: true, notice: "正在同步今日步数，旧圈友已清除；服务器确认后按每1000步区间匹配。")
+            submitted = true
             let response = try await call(APIRequest(method: "PUT", path: "/v1/me/steps", body: [
                 "date": current.day.date, "steps": current.progress.steps,
                 "expected_revision": state.identity!.user.consentRevision]))
@@ -399,15 +435,28 @@ final class SocialModel: ObservableObject {
                   progress.steps == current.progress.steps, progress.floor == current.progress.floor,
                   progress.remainingSteps == current.progress.remainingSteps else { throw NetworkFailure.response }
             syncedDate = response.date; syncedSteps = progress.steps
-            clearBoard()
+            syncedAt = clock(); syncIsStale = false
+            acknowledged = true
+            let notice = previousCircle.map { previous in
+                previous != target
+                    ? "今日步数从\(previous.minSteps)–\(previous.maxSteps)步跨入\(target.minSteps)–\(target.maxSteps)步，已自动迁圈；刷新后显示新圈友。"
+                    : "今日步数已同步，仍在\(target.minSteps)–\(target.maxSteps)步区间；刷新后确认圈友。"
+            } ?? "今日步数已同步；已参加者按每1000步区间自动匹配，未参加者不会自动加入。"
+            clearBoard(preservingSuccess: true, circleNotice: notice)
             try await loadPage()
             guard ticket == epoch else { return }
             message = "当日累计快照同步成功，重复提交不会相加。"
-        } catch { handle(error) }
+        } catch {
+            if ticket == epoch, submitted, !acknowledged {
+                circleNotice = "本次上传结果未确认，已隐藏旧圈友。可刷新查看服务器当前频道。"
+            }
+            handle(error)
+        }
     }
 
     func foreground(local: LocalAppModel) async {
         dayChangedIfNeeded()
+        markCached()
         await waitForIdle()
         await refresh()
         if canUpload { await sync(local: local) }
@@ -415,9 +464,7 @@ final class SocialModel: ObservableObject {
     }
 
     func dayChangedIfNeeded() {
-        let today = ShanghaiDay(containing: clock()).date
-        if (boardDate != nil && boardDate != today) || (syncedDate != nil && syncedDate != today)
-            || (circle != nil && circle?.date != today) { dayChanged() }
+        if currentDay != ShanghaiDay(containing: clock()) { dayChanged() }
     }
 
     func joinCircle() async {
@@ -447,6 +494,7 @@ final class SocialModel: ObservableObject {
         dayChangedIfNeeded()
         guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil, state.logoutPending != true else { return }
         if more && circleNext == nil { return }
+        if circleUpdatedAt != nil { circleIsStale = true }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -459,7 +507,7 @@ final class SocialModel: ObservableObject {
                     query: [URLQueryItem(name: "limit", value: String(pageSize))]))
                 guard ticket == epoch else { return }
                 try checkDay(location)
-                if location.participating == false { clearCircle(); circleParticipating = false; return }
+                if location.participating == false { confirmNotParticipating(); return }
                 guard location.participating == true, let channel = location.circle,
                       let entry = location.entry, entry.isMe, entry.id == state.identity?.user.id,
                       let version = location.snapshot, location.pageCursor != nil,
@@ -474,7 +522,7 @@ final class SocialModel: ObservableObject {
             guard ticket == epoch, state.privacy == nil else { return }
             try checkDay(response)
             guard let participating = response.participating else { throw NetworkFailure.response }
-            if !participating { clearCircle(); circleParticipating = false; return }
+            if !participating { confirmNotParticipating(); return }
             guard let channel = response.circle, channel.date == response.date,
                   let members = response.items, let total = response.total, total >= 1,
                   let version = response.snapshot, response.limit == pageSize,
@@ -489,13 +537,24 @@ final class SocialModel: ObservableObject {
             let combined = more ? circleMembers + members : members
             guard Set(combined.map(\.id)).count == combined.count, combined.count <= total,
                   !locate || members.contains(where: { $0.isMe }) else { throw NetworkFailure.response }
+            if let previous = circle, previous != channel {
+                circleNotice = "服务器已按今日步数自动迁圈：\(previous.minSteps)–\(previous.maxSteps)步 → \(channel.minSteps)–\(channel.maxSteps)步，旧圈友已替换。"
+            }
             circle = channel; circleMembers = combined; circleTotal = total
             circleVersion = version; circleNext = response.nextCursor; circleParticipating = true; circleError = nil
+            circleUpdatedAt = clock(); circleIsStale = false
         } catch {
             guard ticket == epoch else { return }
             // Do not present stale membership or yesterday's channel as today's success.
-            clearCircle(); handle(error); circleError = error.localizedDescription
+            clearCircle(preservingSuccess: true, notice: circleNotice)
+            handle(error); circleError = error.localizedDescription
         }
+    }
+
+    private func confirmNotParticipating() {
+        clearCircle(notice: "服务器已确认未参加圈子；本机运动不受影响，参加仍须主动同意。")
+        circleParticipating = false
+        circleUpdatedAt = clock(); circleIsStale = false
     }
 
     private func loadPage(cursor: String? = nil, append: Bool = false) async throws {
@@ -516,6 +575,7 @@ final class SocialModel: ObservableObject {
     }
 
     func loadMore() async {
+        dayChangedIfNeeded()
         guard !busy, !privacyRunning, storageReady, let cursor = nextCursor else { return }
         busy = true
         defer { finish() }
@@ -524,6 +584,7 @@ final class SocialModel: ObservableObject {
     }
 
     func locateMe() async {
+        dayChangedIfNeeded()
         guard !busy, !privacyRunning, storageReady, authenticated, state.logoutPending != true else { return }
         busy = true
         let ticket = epoch
@@ -553,7 +614,7 @@ final class SocialModel: ObservableObject {
         epoch = UUID()
         state.uploadAllowed = false
         defaults.set(true, forKey: Self.uploadStopKey)
-        syncedDate = nil; syncedSteps = nil; clearBoard()
+        clearSync(); clearBoard()
         message = "本机已停止上传，隐私操作等待服务器确认。"
         do { try persist() } catch { handle(error); return }
         privacyRunning = true
@@ -601,7 +662,7 @@ final class SocialModel: ObservableObject {
         epoch = UUID()
         state = SavedNetworkState()
         clientReset()
-        clearBoard(); syncedDate = nil; syncedSteps = nil
+        clearBoard(); clearSync()
         do { try persist(); message = "已移除此机凭证；这不删除服务端公开数据。已验证邮箱可重新登录；旧匿名身份丢失凭证后不能恢复。" }
         catch { handle(error) }
     }

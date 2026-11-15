@@ -65,11 +65,37 @@ final class LocalAppModelTests: XCTestCase {
 
     func testReadFailurePreservesSameDayLastValueWithoutSuccess() async {
         await model.requestHealthAccess()
+        let successfulRead = model.snapshot?.readAt
+        now.addTimeInterval(0.25)
         reader.result = .failure(MemorySecureStore.Failure.unavailable)
         await model.refresh()
         XCTAssertEqual(model.phase, .failed)
         XCTAssertEqual(model.snapshot?.progress.steps, 101)
         XCTAssertNotNil(model.readingError)
+        XCTAssertEqual(model.snapshot?.readAt, successfulRead)
+        XCTAssertTrue(model.snapshotIsStale)
+    }
+
+    func testCachedReadKeepsSuccessTimeUntilNewResultAndClearsAtMidnight() async throws {
+        await model.requestHealthAccess()
+        let successfulRead = model.snapshot?.readAt
+        XCTAssertFalse(model.snapshotIsStale)
+        model.markCached()
+        XCTAssertTrue(model.snapshotIsStale)
+        now.addTimeInterval(0.25)
+        reader.suspend = true
+        let read = Task { await model.refresh() }
+        try await waitForPending(1)
+        XCTAssertTrue(model.snapshotIsStale)
+        XCTAssertEqual(model.snapshot?.readAt, successfulRead)
+        reader.pending.removeFirst().resume(returning: .total(200))
+        await read.value
+        XCTAssertEqual(model.snapshot?.readAt, now)
+        XCTAssertFalse(model.snapshotIsStale)
+        now.addTimeInterval(1)
+        model.updateDayIfNeeded()
+        XCTAssertNil(model.snapshot)
+        XCTAssertFalse(model.snapshotIsStale)
     }
 
     func testInitialReadFailureIsNotSuccessfulZero() async {
