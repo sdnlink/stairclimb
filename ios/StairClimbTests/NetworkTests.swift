@@ -56,15 +56,36 @@ final class NetworkTransportTests: XCTestCase {
                       "https://example.com/path", "https://example.com#fragment", "ftp://localhost",
                       "http://127.0.bad.0.1", "http://172.32.0.1", "http://[fc::1]", "http://[fd::1]",
                       "http://[2001:4860:4860::8888]", "http://[fe81::1]"] {
-            XCTAssertThrowsError(try ServiceAddress.validated(input, allowLocalHTTP: true), input)
+            XCTAssertThrowsError(try ServiceAddress.validated(input), input)
         }
         for input in ["http://127.0.0.1:8787", "http://192.168.1.3:8787", "http://computer.local:8787", "http://10.0.0.1",
                       "http://172.16.0.1:8787", "http://172.31.255.254:8787", "http://[::1]:8787",
                       "http://[fc00::1]:8787", "http://[fdff::1]:8787", "http://[fe80::1]:8787"] {
-            XCTAssertNoThrow(try ServiceAddress.validated(input, allowLocalHTTP: true), input)
-            XCTAssertThrowsError(try ServiceAddress.validated(input, allowLocalHTTP: false), input)
+            XCTAssertThrowsError(try ServiceAddress.validated(input), input)
         }
-        XCTAssertNoThrow(try ServiceAddress.validated("https://example.com", allowLocalHTTP: false))
+        XCTAssertNoThrow(try ServiceAddress.validated("https://example.com"))
+    }
+
+    func testLocalHTTPSAndRootNormalization() throws {
+        for value in ["https://127.0.0.1:8443", "https://192.168.1.3:8443", "https://stairclimb.local:8443", "https://[::1]:8443"] {
+            XCTAssertNoThrow(try ServiceAddress.validated(value))
+        }
+        XCTAssertEqual(try ServiceAddress.validated("  https://example.com:443/  ").absoluteString, "https://example.com:443")
+    }
+
+    func testDirectClientCannotBypassHTTPSOrSendCredentials() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NetworkURLProtocol.self]
+        NetworkURLProtocol.handler = { _ in
+            XCTFail("A plaintext request must never reach URLSession")
+            return (200, NetworkTestData.payload())
+        }
+        let plaintext = APIClient(baseURL: URL(string: "http://127.0.0.1:8787")!, configuration: configuration)
+        do {
+            _ = try await plaintext.send(APIRequest(method: "GET", path: "/v1/me"), token: NetworkTestData.token)
+            XCTFail("Expected strict HTTPS rejection")
+        } catch { XCTAssertEqual(error as? NetworkFailure, .address) }
+        XCTAssertEqual(configuration.tlsMinimumSupportedProtocolVersion, .TLSv12)
     }
 
     func testRequestUsesAuthorizationHeaderAndAggregateOnlyBody() async throws {

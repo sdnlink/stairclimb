@@ -2,7 +2,6 @@
 """Dependency-free Xcode graph/config check. This is NOT a Swift compiler."""
 import argparse
 import ast
-import ipaddress
 import json
 from pathlib import Path
 import plistlib
@@ -18,27 +17,6 @@ class CheckFailure(ValueError):
 def require(condition, message):
     if not condition:
         raise CheckFailure(message)
-
-
-DEBUG_IP_EXCEPTIONS = frozenset({
-    '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
-    '::1', 'fc00::/7', 'fe80::/16',
-})
-
-
-def check_debug_ats(ats):
-    """iOS 17+ IP exceptions, limited to the app's local Debug address policy."""
-    require(set(ats) == {'NSAllowsLocalNetworking', 'NSExceptionDomains'}
-            and ats['NSAllowsLocalNetworking'] is True, 'Debug ATS exception must be local only')
-    exceptions = ats['NSExceptionDomains']
-    require(isinstance(exceptions, dict) and set(exceptions) == DEBUG_IP_EXCEPTIONS,
-            'Debug IP exceptions must cover exactly the supported local ranges')
-    for address, options in exceptions.items():
-        # Parse as real networks as well as requiring canonical, reviewed ranges.
-        ipaddress.ip_network(address, strict=True)
-        require(isinstance(options, dict) and set(options) == {'NSExceptionAllowsInsecureHTTPLoads'}
-                and options['NSExceptionAllowsInsecureHTTPLoads'] is True,
-                f'Debug IP exception must allow only local HTTP: {address}')
 
 
 def openstep(text):
@@ -209,11 +187,20 @@ def check_project(root):
         require(not any('Location' in key for key in info), 'Unrequested location capability')
         ats = info.get('NSAppTransportSecurity', {})
         require(not ats.get('NSAllowsArbitraryLoads') and not ats.get('NSAllowsArbitraryLoadsInWebContent'), f'{mode} has arbitrary ATS bypass')
-        if mode == 'Release':
-            require(not ats, 'Release must use default HTTPS transport security')
-        else:
-            check_debug_ats(ats)
+        require(not ats, f'{mode} must use default HTTPS transport security')
+        if mode == 'Debug':
             require(settings.get('ENABLE_TESTABILITY') == 'YES', 'Debug not testable')
+    address = (ios/'StairClimb/Network/ServiceAddress.swift').read_text()
+    api = (ios/'StairClimb/Network/APIClient.swift').read_text()
+    require('parts.scheme?.lowercased() == "https"' in address and 'allowLocalHTTP' not in address
+            and 'scheme == "http"' not in address, 'Client address policy must require HTTPS in all builds')
+    require('try ServiceAddress.validated(baseURL.absoluteString)' in api,
+            'APIClient must revalidate HTTPS before sending')
+    require('configuration.tlsMinimumSupportedProtocolVersion = .TLSv12' in api,
+            'URLSession must require at least TLS 1.2')
+    require(not re.search(r'serverTrust|SecTrust|URLCredential\s*\(\s*trust:|didReceive\s+challenge', api),
+            'URLSession must preserve system certificate trust')
+    require('completionHandler(nil)' in api, 'Credential redirects must remain disabled')
     for config in configurations(tests).values():
         settings = config['buildSettings']
         require(settings.get('TEST_HOST') == '$(BUILT_PRODUCTS_DIR)/StairClimb.app/StairClimb', 'Wrong XCTest host')
@@ -257,7 +244,7 @@ def check_project(root):
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
             'PASS shared scheme, XCTest host/dependency, source/resource membership, icon',
             'PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission',
-            'PASS Debug local-only ATS and Release default HTTPS; associated xcconfig/plists',
+            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled',
             'PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone',
             'LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation']
 

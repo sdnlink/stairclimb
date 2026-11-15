@@ -1,0 +1,10 @@
+$ python3 -m unittest backend.tests.test_email_auth.EmailAuthTests.test_production_binary_disables_legacy_and_external_http_listener backend.tests.test_email_auth.EmailAuthTests.test_binding_cannot_merge_existing_email_or_claim_another_identity -v
+test_production_binary_disables_legacy_and_external_http_listener (backend.tests.test_email_auth.EmailAuthTests.test_production_binary_disables_legacy_and_external_http_listener) ... ok
+test_binding_cannot_merge_existing_email_or_claim_another_identity (backend.tests.test_email_auth.EmailAuthTests.test_binding_cannot_merge_existing_email_or_claim_another_identity) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 10.087s
+
+OK
+
+exit_status=0

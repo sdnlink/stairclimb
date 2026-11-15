@@ -49,3 +49,11 @@ iOS正式及本地开发连接均用HTTPS/TLS和正常系统信任校验，移�
 保留Rust/PostgreSQL及原三个固定命令，增加真实数据库、HTTP、邮件、会话、隐私、旧身份绑定、SMTP失败及HTTPS证书/域名/明文拒绝测试，并适配Swift UI/测试和Linux检查。模块提案见`docs/module-additions-07.json`，这些新增认证及HTTPS模块尚未实现，不因记录需求即视为完成。
 
 监督器原八模块定义逐字不可变，后发覆盖通过新增模块承接；不重写旧acceptance/depends_on/files/checks，也不直接改监督器状态。格式修复和保持的证据见`docs/verification-06-conclusion-repair.md`。
+
+## 2026-11-15 优化授权（认证优先、预算不扩）
+
+优先完成既有邮箱认证及端到端HTTPS，不重新实现已验证后端。随后在现有Rust服务加入有界PostgreSQL连接池（上限、获取超时、归还），缩小全局写锁并保留一致锁序、会话及隐私版本屏障；排行榜/圈友由数据库分页及索引支持，不能每页全部加载进Rust。提供真实并发/数据规模的改前改后实验和局限，不编造吞吐收益。
+
+Swift进度、排行榜、圈子展示最后成功读取/同步/刷新时间；错误不覆盖成功时间，离线旧值明确标缓存，上海跨日不复用昨日成功。圈子显示区间及自动迁圈原因，迁圈、退出和午夜使旧成员视图失效，昵称公开、邮箱私密。提供可直接执行Mac构建/XCTest入口及适用的macOS CI；交付真机HealthKit、断网恢复、跨日和圈子切换步骤，未执行的平台验证如实披露。
+
+新增模块提案见`docs/module-additions-08-optimization.json`：`backend_data_access`、`ios_freshness`、`apple_build_validation`。它们追加原模块，不改旧定义，不因提案即视为实现完成。三个固定命令及真实Rust/PostgreSQL/隔离邮件/HTTPS和Swift测试继续保留；预算不扩大，不修改Auto Moniter源码或运行状态。

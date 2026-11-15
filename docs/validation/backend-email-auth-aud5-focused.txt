@@ -1,0 +1,33 @@
+$ python3 -m unittest backend.tests.test_email_auth -v
+test_binding_cannot_merge_existing_email_or_claim_another_identity (backend.tests.test_email_auth.EmailAuthTests.test_binding_cannot_merge_existing_email_or_claim_another_identity) ... ok
+test_concurrent_independent_registration_consumes_proof_once (backend.tests.test_email_auth.EmailAuthTests.test_concurrent_independent_registration_consumes_proof_once) ... ok
+test_concurrent_refresh_has_one_winner (backend.tests.test_email_auth.EmailAuthTests.test_concurrent_refresh_has_one_winner) ... ok
+test_duplicate_unknown_and_known_mail_responses_are_uniform (backend.tests.test_email_auth.EmailAuthTests.test_duplicate_unknown_and_known_mail_responses_are_uniform) ... ok
+test_independent_registration_cannot_unbind_verified_or_nonlegacy_account (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_cannot_unbind_verified_or_nonlegacy_account) ... ok
+test_independent_registration_expiry_restart_and_binding_replay (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_expiry_restart_and_binding_replay) ... ok
+test_independent_registration_invalid_requests_preserve_pending_claim (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_invalid_requests_preserve_pending_claim) ... ok
+test_legacy_binding_requires_old_device_and_mailbox_preserves_history (backend.tests.test_email_auth.EmailAuthTests.test_legacy_binding_requires_old_device_and_mailbox_preserves_history) ... ok
+test_limits_commit_on_failure_survive_restart_and_expire (backend.tests.test_email_auth.EmailAuthTests.test_limits_commit_on_failure_survive_restart_and_expire) ... ok
+test_logout_and_logout_all_revoke_persistent_sessions (backend.tests.test_email_auth.EmailAuthTests.test_logout_and_logout_all_revoke_persistent_sessions) ... ok
+test_mail_failure_missing_config_and_retry_do_not_fake_delivery (backend.tests.test_email_auth.EmailAuthTests.test_mail_failure_missing_config_and_retry_do_not_fake_delivery) ... ok
+test_mailbox_owner_can_register_independently_of_unverified_legacy_binding (backend.tests.test_email_auth.EmailAuthTests.test_mailbox_owner_can_register_independently_of_unverified_legacy_binding) ... ok
+test_pending_registration_can_be_recovered_by_mailbox_owner (backend.tests.test_email_auth.EmailAuthTests.test_pending_registration_can_be_recovered_by_mailbox_owner) ... ok
+test_production_binary_disables_legacy_and_external_http_listener (backend.tests.test_email_auth.EmailAuthTests.test_production_binary_disables_legacy_and_external_http_listener) ... ok
+test_refresh_rotation_access_expiry_and_replay (backend.tests.test_email_auth.EmailAuthTests.test_refresh_rotation_access_expiry_and_replay) ... ok
+test_registration_verification_and_independent_consent (backend.tests.test_email_auth.EmailAuthTests.test_registration_verification_and_independent_consent) ... ok
+test_resend_invalidates_old_proof_and_expiry_is_authoritative (backend.tests.test_email_auth.EmailAuthTests.test_resend_invalidates_old_proof_and_expiry_is_authoritative) ... ok
+test_reset_is_once_only_and_revokes_all_sessions_after_restart (backend.tests.test_email_auth.EmailAuthTests.test_reset_is_once_only_and_revokes_all_sessions_after_restart) ... ok
+test_salted_passwords_and_hashed_proofs_sessions_no_secret_logs (backend.tests.test_email_auth.EmailAuthTests.test_salted_passwords_and_hashed_proofs_sessions_no_secret_logs) ... ok
+test_source_limit_stops_random_credential_guessing (backend.tests.test_email_auth.EmailAuthTests.test_source_limit_stops_random_credential_guessing) ... ok
+test_starttls_does_not_fall_back_to_plaintext_capture (backend.tests.test_email_auth.EmailAuthTests.test_starttls_does_not_fall_back_to_plaintext_capture) ... ok
+test_two_users_public_models_privacy_barriers_and_account_deletion (backend.tests.test_email_auth.EmailAuthTests.test_two_users_public_models_privacy_barriers_and_account_deletion) ... ok
+test_validation_and_identity_fields_cannot_be_smuggled (backend.tests.test_email_auth.EmailAuthTests.test_validation_and_identity_fields_cannot_be_smuggled) ... ok
+test_waiting_write_rechecks_session_after_logout (backend.tests.test_email_auth.EmailAuthTests.test_waiting_write_rechecks_session_after_logout) ... ok
+test_wrong_unknown_and_unverified_logins_have_same_error (backend.tests.test_email_auth.EmailAuthTests.test_wrong_unknown_and_unverified_logins_have_same_error) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 102.596s
+
+OK
+
+exit_status=0

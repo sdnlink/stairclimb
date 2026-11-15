@@ -135,7 +135,7 @@ struct Request {
     authorization: Option<String>,
     body: Value,
 }
-fn read_request(stream: &mut TcpStream) -> Result<Request> {
+fn read_request(stream: &mut impl Read) -> Result<Request> {
     let mut header = Vec::new();
     let mut byte = [0u8; 1];
     loop {
@@ -253,11 +253,13 @@ fn read_request(stream: &mut TcpStream) -> Result<Request> {
         body,
     })
 }
-fn reply(stream: &mut TcpStream, status: u16, payload: Value, head: bool) {
+fn reply(stream: &mut impl Write, status: u16, payload: Value, head: bool) {
     let data = serde_json::to_vec(&payload).unwrap();
     let title = match status {
         200 => "OK",
         201 => "Created",
+        202 => "Accepted",
+        429 => "Too Many Requests",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",
@@ -280,18 +282,26 @@ fn reply(stream: &mut TcpStream, status: u16, payload: Value, head: bool) {
     }
     let _ = stream.flush();
 }
-fn serve(mut stream: TcpStream, app: Arc<Application>) {
+fn serve(stream: TcpStream, app: Arc<Application>, tls: Option<Arc<rustls::ServerConfig>>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let source = stream
+        .peer_addr()
+        .map(|p| p.ip().to_string())
+        .unwrap_or_else(|_| "unknown".to_owned());
+    let Ok(mut stream) = crate::tls::Wire::new(stream, tls) else {
+        return;
+    };
     let mut head = false;
     let result = read_request(&mut stream).and_then(|r| {
         head = r.method == "HEAD";
-        app.dispatch(
+        app.dispatch_from(
             &r.method,
             &r.path,
             r.authorization.as_deref(),
             &r.body,
             &r.params,
+            &source,
         )
     });
     match result {
@@ -306,9 +316,11 @@ fn serve(mut stream: TcpStream, app: Arc<Application>) {
                     .unwrap_or(error.payload())
             };
             reply(&mut stream, error.status, payload, head);
-            close_after_rejection(&mut stream);
+            stream.finish();
+            close_after_rejection(stream.socket());
         }
     }
+    stream.finish();
 }
 fn close_after_rejection(stream: &mut TcpStream) {
     // A rejected length/type can leave bytes unread. Closing immediately may
@@ -332,10 +344,12 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
     let mut port = std::env::var("STAIRCLIMB_PORT").unwrap_or_else(|_| "8787".to_owned());
     #[allow(unused_mut)]
     let mut clock = Clock::Real;
+    let mut email_only = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let value = args.next().ok_or("missing argument value")?;
         match arg.as_str() {
+            "--email-only" if test_mode && value == "true" => email_only = true,
             "--host" => host = value,
             "--port" => port = value,
             "--clock-file" if test_mode => {
@@ -356,16 +370,33 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
     if !test_mode && std::env::var_os("STAIRCLIMB_TEST_CLOCK").is_some() {
         return Err("test clock unavailable in production".into());
     }
+    let tls = crate::tls::configured()?;
+    // Only TLS may listen outside loopback; internal plaintext remains test/local only.
+    if tls.is_none()
+        && !host
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false)
+    {
+        return Err("HTTP listener must be a literal loopback address".into());
+    }
     let database_url = std::env::var("DATABASE_URL")?;
-    let app = Arc::new(Application::new(database_url, clock).map_err(|_| "database unavailable")?);
+    let mut app = Application::new(database_url, clock).map_err(|_| "database unavailable")?;
+    // Only the test binary can use anonymous regression fixtures. Production never opts in.
+    app.legacy_test_mode = test_mode && !email_only;
+    let app = Arc::new(app);
     let listener = TcpListener::bind((host.as_str(), port.parse::<u16>()?))?;
-    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=1",host,listener.local_addr()?.port());
+    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=2; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
     std::io::stdout().flush()?;
     let active = Arc::new(AtomicUsize::new(0));
     for socket in listener.incoming() {
         let mut stream = socket?;
         if active.fetch_add(1, Ordering::SeqCst) >= 64 {
             active.fetch_sub(1, Ordering::SeqCst);
+            if tls.is_some() {
+                let _ = stream.shutdown(Shutdown::Both);
+                continue;
+            }
             reply(
                 &mut stream,
                 503,
@@ -376,8 +407,9 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
         }
         let app = app.clone();
         let active = active.clone();
+        let tls = tls.clone();
         std::thread::spawn(move || {
-            serve(stream, app);
+            serve(stream, app, tls);
             active.fetch_sub(1, Ordering::SeqCst);
         });
     }

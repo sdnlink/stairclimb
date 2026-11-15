@@ -4,28 +4,32 @@
 
 当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜与隐私操作。中文圈子页面及最终集成验收仍为后续必交模块；没有静态假榜单。Linux检查与真实HTTP契约验证已执行，Apple平台验证仍未执行。
 
+本轮新增邮箱认证后端已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，当前Swift匿名注册界面尚待`ios_email_auth`替换；原生TLS服务与严格HTTPS客户端策略已实现，见[HTTPS配置](docs/HTTPS.md)；Swift邮箱界面及最终交付仍未完成。后续性能/Swift时间标记/Mac构建入口增量继续必交，不以本模块交审替代全需求完成。
+
 ## 本地启动
 
-需要 Rust/Cargo、Python 3.10+（验证/迁移工具）以及可用 Docker。正式 HTTP 由本项目编译的 Rust 二进制提供，业务数据仅存 PostgreSQL；旧 Python 服务仅保留为历史参考，不参与启动或当前 HTTP 验收。无需邮件、手机验证码、付费服务或开发者账号。
+需要 Rust/Cargo、Python 3.10+（验证/迁移工具）以及可用 Docker。正式 HTTP 由本项目编译的 Rust 二进制提供，业务数据仅存 PostgreSQL；旧 Python 服务仅保留为历史参考，不参与启动或当前 HTTP 验收。本地验证使用隔离邮件捕获器，无需付费服务或开发者账号；正式邮箱投递须由部署者配置SMTP。
 
 ```sh
 cd /home/skn/code/stairclimb
 python3 scripts/postgres_dev.py start
+python3 scripts/dev_tls.py --name stairclimb.local
 . ./.runtime/postgres.env
+. ./.runtime/tls/server.env
 sh scripts/run_backend.sh
 ```
 
 数据库脚本只管理带本项目标签的 `stairclimb-pg-<路径摘要>` 容器和专用卷，使用 PostgreSQL 17、仅绑定 `127.0.0.1` 的 OS 随机端口。连接凭证随机生成，保存在被忽略且权限600的 `.runtime/postgres-container.env` 与 `.runtime/postgres.env`；不要打印、提交或发送这两个文件。无密钥运行信息见 `.runtime/postgres.json`。停止仅本任务数据库：`python3 scripts/postgres_dev.py stop`，数据卷保留；不会停止或删除无关容器。
 
-启动脚本先执行 `cargo build --locked --manifest-path backend/Cargo.toml --bin stairclimb-server`，再 `exec backend/target/debug/stairclimb-server`。HTTP 默认 `127.0.0.1:8787`，前台 Ctrl-C 停止。端口可用 `sh scripts/run_backend.sh --port 8788`，或设置 `STAIRCLIMB_HOST` / `STAIRCLIMB_PORT`。`DATABASE_URL` 必须配置。连接串不出现在启动日志中。首次启动以事务及迁移锁应用 [版本化迁移](backend/migrations/001_initial.sql)，空库可直接启动，重启保留数据。
+启动脚本先执行 `cargo build --locked --manifest-path backend/Cargo.toml --bin stairclimb-server`，再 `exec backend/target/debug/stairclimb-server`。加载上述TLS配置后默认 `https://127.0.0.1:8443`，前台 Ctrl-C 停止。未加载TLS的内部测试HTTP仍默认 `127.0.0.1:8787`。端口可用 `sh scripts/run_backend.sh --port 8788`，或设置 `STAIRCLIMB_HOST` / `STAIRCLIMB_PORT`。`DATABASE_URL` 必须配置。连接串不出现在启动日志中。首次启动以事务及迁移锁应用 [版本化迁移](backend/migrations/001_initial.sql)，空库可直接启动，重启保留数据。
 
 外部自备 PostgreSQL 时可复制 [无密钥配置示例](backend/development.env.example) 到被忽略的 `.env`，填写自己的 `DATABASE_URL` 后 `. ./.env` 再启动；示例所有变量均显式export，`CHANGE_ME`不是可用凭证。当前默认本地连接不使用数据库 TLS；远程数据库须自行配置可信 TLS 通道，本任务不部署公网服务。
 
 ```sh
-curl --fail --silent http://127.0.0.1:8787/health
+curl --fail --silent --cacert .runtime/tls/ca.pem https://127.0.0.1:8443/health
 ```
 
-HTTP 仅供本机/可信局域网开发。真机访问 Linux 需显式监听局域网地址（如 `STAIRCLIMB_HOST=0.0.0.0 sh scripts/run_backend.sh`）并使用电脑可达的局域网 IP；**iPhone 的 127.0.0.1 是手机自己**。远程连接必须通过 HTTPS 反向代理，不要直接将此开发 HTTP 服务暴露公网。iOS Release 使用系统默认 HTTPS且客户端拒绝所有HTTP。Debug 配置 `NSAllowsLocalNetworking`，另为 iOS 17+ 的 IP 连接在 `NSExceptionDomains` 中仅允许回环及私有地址 HTTP：`127.0.0.0/8`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`::1`、`fc00::/7`、`fe80::/16`；不含公网或通用 ATS 放行。客户端同时限制为这些地址或本机/`.local`名称。此配置依据 [Apple本地网络ATS说明](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking) 和 [IP/CIDR例外规则](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains)，系统实际放行仍需Mac/iPhone验证。
+Rust直接提供TLS1.2/1.3：两项证书路径必须同时配置，非法配置启动失败，不降级。无TLS时HTTP仅允许回环，不能用于iPhone。Debug和Release现在都强制HTTPS、默认系统证书信任，无ATS放宽。iPhone的127.0.0.1指手机自身；真机需证书SAN覆盖的Linux局域网地址/域名并安装、信任自己的开发CA。完整生成、证书信任、LAN配置、自备正式证书及停止步骤见[HTTPS说明](docs/HTTPS.md)。
 
 ## 验证
 
@@ -65,7 +69,7 @@ python3 -m unittest backend.tests.test_social -v
 
 主界面为中文可视化楼梯，突出“我”的虚拟楼层，显示今日步数、楼层、距下一层步数以及上海日期/读取时间。无首次读取结果时显示“—”，无可读数据时明确说明可能无记录或没有读取权限；HealthKit 不向 App 透露拒绝读取的可靠状态。查询错误保留并标注同日上次结果，不冒充成功零值。回前台和下拉重新读取；前台上海午夜清空旧日展示并重新查询，异步旧日结果不能覆盖新日。HealthKit 只请求读取 `.stepCount`，按上海00:00至次日00:00查询汇总，无写入或删除健康数据，无演示数据。
 
-点击右上角创建/修改本机昵称。本机 UUID 和昵称完整保存在 Keychain（`WhenUnlockedThisDeviceOnly`，不作云同步），安全存储失败不自动生成替代身份。**本机 UUID 不是后端账号或认证凭证**；“今日楼层榜”单独创建真实联网账号，服务器凭证也只放入 Keychain。本机查看无需共享同意，也不需要联网注册。没有邮箱/手机号/跨设备找回；退出或丢失凭证无法保证找回，重装后的 Keychain 保留也不能保证。
+点击右上角创建/修改本机昵称。本机 UUID 和昵称完整保存在 Keychain（`WhenUnlockedThisDeviceOnly`，不作云同步），安全存储失败不自动生成替代身份。**本机 UUID 不是后端账号或认证凭证**；现有“今日楼层榜”使用独立Keychain联网凭证；其匿名注册界面正由邮箱模块替换，正式服务已不接受新匿名注册。本机查看无需共享同意，也不需要联网注册。没有邮箱/手机号/跨设备找回；退出或丢失凭证无法保证找回，重装后的 Keychain 保留也不能保证。
 
 Linux 可复现检查（Python 标准库，无需 Swift/Xcode）：
 
@@ -88,7 +92,8 @@ Swift 测试覆盖0/99/100/101/最大值、剩余步数、非法汇总、上海�
 
 ## iOS 联网与隐私
 
-进入“今日楼层榜”，填写服务**根地址**和昵称，点击注册。没有默认公共服务器；本地Debug可填 `http://你的Linux局域网IP:8787`，远程或Release须为HTTPS。地址不允许携带用户密码、路径、查询参数或片段。注册默认不共享，仍可浏览公开榜单；需要上传时点击“了解并同意共享”，主动确认昵称、当日汇总步数和虚拟楼层会公开。已有服务器记录可能在重新同意后再次公开，圈子不会自动加入。
+现有“今日楼层榜”的匿名注册表单属于旧客户端源码，正式后端已禁用该注册入口。邮箱API可用流程、隔离SMTP捕获及绑定说明见[邮箱认证](docs/EMAIL_AUTH.md)，Swift邮箱表单由后续模块接入；当前地址与URLSession已强制HTTPS。本机HealthKit进度继续独立可用。后续客户端需要上传时仍须主动确认昵称、当日汇总步数及虚拟楼层会公开；邮箱验证不会替代此同意。
+
 
 “读取今日步数并同步”先刷新共享版本，再读取HealthKit，仅在本次成功读取的上海日期与服务器一致时上传 `date/steps/expected_revision`，不上传原始样本。无可读数据状态的临时0值及失败保留的旧值不上传；真实读取到0则可以上传。成功同意后，回前台与上海午夜会尝试重新读取并同步；没有后台准点任务依赖。超时不重放旧快照，手动重试会重新读取。榜单支持刷新、逐页加载到底和跳到本人所在页；版本变化清除旧页，失败保留的同日结果标明缓存及上海读取时间，旧日榜单立即清除。
 

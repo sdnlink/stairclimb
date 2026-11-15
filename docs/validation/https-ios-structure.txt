@@ -1,0 +1,42 @@
+$ python3 scripts/check_ios_project.py
+PASS project reference graph: 91 objects; 16 app + 6 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+
+exit_status=0
+$ python3 -m unittest discover -s scripts/tests -p test_*.py -v
+test_credential_redirects_cannot_be_enabled (test_ios_project.IOSProjectChecks.test_credential_redirects_cannot_be_enabled) ... ok
+test_custom_certificate_trust_bypass_rejected (test_ios_project.IOSProjectChecks.test_custom_certificate_trust_bypass_rejected) ... ok
+test_debug_arbitrary_loads_are_still_rejected (test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_exception_cannot_enter_release (test_ios_project.IOSProjectChecks.test_debug_legacy_exception_cannot_enter_release) ... ok
+test_debug_local_http_and_all_exception_ranges_rejected (test_ios_project.IOSProjectChecks.test_debug_local_http_and_all_exception_ranges_rejected) ... ok
+test_debug_local_key_alone_rejected (test_ios_project.IOSProjectChecks.test_debug_local_key_alone_rejected) ... ok
+test_direct_client_bypass_rejected (test_ios_project.IOSProjectChecks.test_direct_client_bypass_rejected) ... ok
+test_disabled_capability (test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_http_address_bypass_rejected (test_ios_project.IOSProjectChecks.test_http_address_bypass_rejected) ... ok
+test_missing_entitlement (test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_icon (test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_openstep_duplicate_key_rejected (test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_release_ats_bypass (test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_local_exception_is_also_rejected (test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_test_target_has_no_app_dependency (test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_tls_minimum_cannot_be_lowered (test_ios_project.IOSProjectChecks.test_tls_minimum_cannot_be_lowered) ... ok
+test_unlinked_source (test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_valid_project (test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.254s
+
+OK
+
+exit_status=0

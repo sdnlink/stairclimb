@@ -13,10 +13,11 @@ use uuid::Uuid;
 pub struct Application {
     pub database_url: String,
     pub clock: Clock,
+    pub(crate) legacy_test_mode: bool,
 }
 #[derive(Clone)]
-struct User {
-    id: String,
+pub(crate) struct User {
+    pub(crate) id: String,
     nickname: String,
     sharing: bool,
     revision: i64,
@@ -30,7 +31,7 @@ impl User {
             revision: r.get("consent_revision"),
         }
     }
-    fn public(&self) -> Value {
+    pub(crate) fn public(&self) -> Value {
         json!({"id":self.id,"nickname":self.nickname,"sharing_enabled":self.sharing,"consent_revision":self.revision})
     }
     fn consent(&self, expected: i64, require_sharing: bool) -> Result<()> {
@@ -51,16 +52,26 @@ impl User {
         Ok(())
     }
 }
-fn authenticate(db: &mut impl GenericClient, authorization: Option<&str>) -> Result<User> {
-    let invalid = ApiError::new(401, "unauthorized", "身份凭证无效，请检查本机身份");
-    let auth = authorization
-        .filter(|a| matches(r"^Bearer [A-Za-z0-9_-]{43}$", a))
-        .ok_or(invalid.clone())?;
-    let digest = format!("{:x}", Sha256::digest(&auth.as_bytes()[7..]));
-    db.query_opt("SELECT * FROM users WHERE token_hash=$1", &[&digest])?
-        .map(|r| User::from_row(&r))
-        .ok_or(invalid)
+pub(crate) fn authenticate(
+    db: &mut impl GenericClient,
+    authorization: Option<&str>,
+    now: i64,
+    legacy_ok: bool,
+) -> Result<User> {
+    let invalid = ApiError::new(401, "unauthorized", "身份凭证无效，请重新登录");
+    let token = crate::auth::bearer(authorization)?;
+    let digest = crate::auth::digest(token);
+    if let Some(row) = db.query_opt("SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id JOIN email_accounts a ON a.user_id=u.id AND a.verified WHERE s.access_hash=$1 AND s.access_expires_at>$2", &[&digest,&now])? {
+        return Ok(User::from_row(&row));
+    }
+    if legacy_ok {
+        if let Some(row) = db.query_opt("SELECT u.* FROM users u LEFT JOIN email_accounts a ON a.user_id=u.id WHERE u.token_hash=$1 AND (a.user_id IS NULL OR NOT a.verified)", &[&digest])? {
+            return Ok(User::from_row(&row));
+        }
+    }
+    Err(invalid)
 }
+
 fn invalidate(db: &mut impl GenericClient) -> Result<()> {
     db.execute(
         "UPDATE metadata SET value=value+1 WHERE key='leaderboard_revision'",
@@ -68,12 +79,12 @@ fn invalidate(db: &mut impl GenericClient) -> Result<()> {
     )?;
     Ok(())
 }
-fn refresh_user(db: &mut impl GenericClient, id: &str) -> Result<User> {
+pub(crate) fn refresh_user(db: &mut impl GenericClient, id: &str) -> Result<User> {
     Ok(User::from_row(
         &db.query_one("SELECT * FROM users WHERE id=$1", &[&id])?,
     ))
 }
-fn begin(db: &mut Client, write: bool) -> Result<Transaction<'_>> {
+pub(crate) fn begin(db: &mut Client, write: bool) -> Result<Transaction<'_>> {
     let mut tx = if write {
         db.transaction()?
     } else {
@@ -98,6 +109,7 @@ impl Application {
         let app = Self {
             database_url,
             clock,
+            legacy_test_mode: cfg!(test),
         };
         app.migrate()?;
         Ok(app)
@@ -110,6 +122,7 @@ impl Application {
         let mut tx = db.transaction()?;
         tx.query_one("SELECT pg_advisory_xact_lock(72815291)", &[])?;
         tx.batch_execute(include_str!("../migrations/001_initial.sql"))?;
+        tx.batch_execute(include_str!("../migrations/002_email_auth.sql"))?;
         tx.commit()?;
         Ok(())
     }
@@ -121,11 +134,39 @@ impl Application {
         body: &Value,
         params: &HashMap<String, String>,
     ) -> Result<(u16, Value)> {
+        self.dispatch_from(method, path, authorization, body, params, "internal")
+    }
+    pub fn dispatch_from(
+        &self,
+        method: &str,
+        path: &str,
+        authorization: Option<&str>,
+        body: &Value,
+        params: &HashMap<String, String>,
+        source: &str,
+    ) -> Result<(u16, Value)> {
+        if path.starts_with("/v1/auth/") {
+            return self.auth_dispatch(method, path, authorization, body, source);
+        }
+        // Old device credentials remain usable only for binding and private privacy operations.
+        let privacy = (method == "GET" && path == "/v1/me")
+            || (method == "DELETE" && matches!(path, "/v1/me" | "/v1/me/steps"))
+            || (method == "PUT"
+                && matches!(path, "/v1/me/sharing" | "/v1/me/circle-participation")
+                && body["enabled"] == false);
+        let legacy_ok = self.legacy_test_mode || privacy;
         let context = day_context(self.clock.now()?);
         if method == "GET" && path == "/health" {
             return Ok((200, merge(json!({"status":"ok"}), context)));
         }
         if method == "POST" && path == "/v1/users" {
+            if !self.legacy_test_mode {
+                return Err(ApiError::new(
+                    403,
+                    "email_registration_required",
+                    "请通过邮箱验证注册账号",
+                ));
+            }
             exact_fields(body, &["nickname"])?;
             let name = nickname(&body["nickname"])?;
             let mut bytes = [0u8; 32];
@@ -149,7 +190,12 @@ impl Application {
         }
         if method == "GET" && path == "/v1/me" {
             let mut db = self.connect()?;
-            let user = authenticate(&mut db, authorization)?;
+            let user = authenticate(
+                &mut db,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             return Ok((200, merge(json!({"user":user.public()}), context)));
         }
         if method == "PATCH" && path == "/v1/me" {
@@ -157,7 +203,12 @@ impl Application {
             let name = nickname(&body["nickname"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             if user.nickname != name {
                 tx.execute(
                     "UPDATE users SET nickname=$1 WHERE id=$2",
@@ -179,7 +230,12 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             user.consent(expected, false)?;
             if !enabled || user.sharing != enabled {
                 tx.execute("UPDATE users SET sharing_enabled=$1,consent_revision=consent_revision+1 WHERE id=$2",&[&(enabled as i16),&user.id])?;
@@ -201,7 +257,12 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             user.consent(expected, true)?;
             // Re-sample only after PostgreSQL has granted the write lock.
             let now = self.clock.now()?;
@@ -231,7 +292,12 @@ impl Application {
         if method == "GET" && path == "/v1/me/steps" {
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, false)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             let context = day_context(self.clock.now()?);
             let date = context["date"].as_str().unwrap();
             let saved = tx.query_opt(
@@ -256,7 +322,12 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             user.consent(expected, false)?;
             let result = if path.ends_with("/steps") {
                 let deleted =
@@ -292,7 +363,12 @@ impl Application {
             };
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, update)?;
-            let user = authenticate(&mut tx, authorization)?;
+            let user = authenticate(
+                &mut tx,
+                authorization,
+                self.clock.now()?.timestamp(),
+                legacy_ok,
+            )?;
             let stored = tx.query_opt(
                 "SELECT enabled FROM circle_participation WHERE user_id=$1",
                 &[&user.id],
@@ -371,7 +447,12 @@ impl Application {
         }
         let mut db = self.connect()?;
         let mut tx = begin(&mut db, false)?;
-        let viewer = authenticate(&mut tx, authorization)?;
+        let viewer = authenticate(
+            &mut tx,
+            authorization,
+            self.clock.now()?.timestamp(),
+            self.legacy_test_mode,
+        )?;
         let context = day_context(self.clock.now()?);
         let date = context["date"].as_str().unwrap();
         let version: i64 = tx
@@ -618,10 +699,10 @@ mod tests {
             0
         );
         assert_eq!(
-            db.query_one("SELECT version FROM schema_migrations", &[])
+            db.query_one("SELECT MAX(version) FROM schema_migrations", &[])
                 .unwrap()
                 .get::<_, i64>(0),
-            1
+            2
         );
     }
     #[test]

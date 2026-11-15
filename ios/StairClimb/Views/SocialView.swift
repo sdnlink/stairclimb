@@ -33,7 +33,7 @@ struct SocialView: View {
                         TextField("服务根地址，例如 https://你的服务", text: $address)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         TextField("联网昵称", text: $nickname)
-                        Text("真机访问Linux需同局域网地址或HTTPS；127.0.0.1指手机本身。仅Debug允许本地HTTP。")
+                        Text("连接须使用HTTPS，开发证书需在设备安装并信任CA。127.0.0.1指手机本身；真机请用证书覆盖的Linux局域网地址或域名。")
                             .font(.caption).foregroundStyle(.secondary)
                         Button("注册并安全保存凭证") {
                             Task { await model.register(address: address, nickname: nickname) }

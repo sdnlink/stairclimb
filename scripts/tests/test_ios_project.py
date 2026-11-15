@@ -1,6 +1,5 @@
 """Regression tests prove the static check rejects real broken project wiring."""
 from pathlib import Path
-import ipaddress
 import plistlib
 import shutil
 import sys
@@ -77,72 +76,62 @@ class IOSProjectChecks(unittest.TestCase):
         path.write_bytes(plistlib.dumps(data))
         self.rejects('Release must use default HTTPS')
 
-    def debug_ats(self):
+    def test_debug_local_http_and_all_exception_ranges_rejected(self):
+        path = self.root/'ios/StairClimb/Info-Debug.plist'
+        original = plistlib.loads(path.read_bytes())
+        for value in ['127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16',
+                      '::1','fc00::/7','fe80::/16','example.com','0.0.0.0/0','*.local']:
+            with self.subTest(value=value):
+                data = original | {'NSAppTransportSecurity': {'NSExceptionDomains': {
+                    value: {'NSExceptionAllowsInsecureHTTPLoads': True}}}}
+                path.write_bytes(plistlib.dumps(data))
+                self.rejects('Debug must use default HTTPS')
+
+    def test_debug_local_key_alone_rejected(self):
         path = self.root/'ios/StairClimb/Info-Debug.plist'
         data = plistlib.loads(path.read_bytes())
-        return path, data, data['NSAppTransportSecurity']
-
-    def test_debug_local_ip_coverage_and_public_exclusion(self):
-        _, _, ats = self.debug_ats()
-        networks = [ipaddress.ip_network(address) for address in ats['NSExceptionDomains']]
-        for value in ['127.0.0.1', '127.255.255.254', '10.0.0.1', '10.255.255.254',
-                      '172.16.0.1', '172.31.255.254', '192.168.1.3', '192.168.255.254',
-                      '::1', 'fc00::1', 'fdff::1', 'fe80::1', 'fe80:ffff::1']:
-            address = ipaddress.ip_address(value)
-            self.assertTrue(any(address in network for network in networks), value)
-        for value in ['8.8.8.8', '1.1.1.1', '172.15.255.255', '172.32.0.1', '192.169.0.1',
-                      '2001:4860:4860::8888', 'fc::1', 'fd::1', 'fe81::1', '::']:
-            address = ipaddress.ip_address(value)
-            self.assertFalse(any(address in network for network in networks), value)
-        check_project(self.root)
-
-    def test_debug_missing_each_ip_range_is_rejected(self):
-        path, data, ats = self.debug_ats()
-        exceptions = dict(ats['NSExceptionDomains'])
-        for address in exceptions:
-            with self.subTest(address=address):
-                ats['NSExceptionDomains'] = {key: value for key, value in exceptions.items() if key != address}
-                path.write_bytes(plistlib.dumps(data))
-                self.rejects('Debug IP exceptions must cover exactly')
-
-    def test_debug_legacy_local_key_alone_is_rejected(self):
-        path, data, ats = self.debug_ats()
-        del ats['NSExceptionDomains']
+        data['NSAppTransportSecurity'] = {'NSAllowsLocalNetworking': True}
         path.write_bytes(plistlib.dumps(data))
-        self.rejects('Debug ATS exception must be local only')
-
-    def test_debug_public_or_wildcard_exceptions_are_rejected(self):
-        path, data, ats = self.debug_ats()
-        original = dict(ats['NSExceptionDomains'])
-        for value in ['8.8.8.8', 'example.com', '0.0.0.0/0', '::/0', '*.local']:
-            with self.subTest(value=value):
-                ats['NSExceptionDomains'] = original | {value: {'NSExceptionAllowsInsecureHTTPLoads': True}}
-                path.write_bytes(plistlib.dumps(data))
-                self.rejects('Debug IP exceptions must cover exactly')
-
-    def test_debug_missing_http_permission_or_extra_tls_relaxation_rejected(self):
-        path, data, ats = self.debug_ats()
-        for options in [{}, {'NSExceptionAllowsInsecureHTTPLoads': False},
-                        {'NSExceptionAllowsInsecureHTTPLoads': True, 'NSIncludesSubdomains': True},
-                        {'NSExceptionAllowsInsecureHTTPLoads': True, 'NSExceptionMinimumTLSVersion': 'TLSv1.0'}]:
-            with self.subTest(options=options):
-                ats['NSExceptionDomains']['192.168.0.0/16'] = options
-                path.write_bytes(plistlib.dumps(data))
-                self.rejects('Debug IP exception must allow only local HTTP')
+        self.rejects('Debug must use default HTTPS')
 
     def test_debug_arbitrary_loads_are_still_rejected(self):
-        path, data, ats = self.debug_ats()
-        ats['NSAllowsArbitraryLoads'] = True
+        path = self.root/'ios/StairClimb/Info-Debug.plist'
+        data = plistlib.loads(path.read_bytes())
+        data['NSAppTransportSecurity'] = {'NSAllowsArbitraryLoads': True}
         path.write_bytes(plistlib.dumps(data))
         self.rejects('Debug has arbitrary ATS bypass')
 
-    def test_release_cannot_inherit_debug_ip_exceptions(self):
-        _, _, ats = self.debug_ats()
+    def test_debug_legacy_exception_cannot_enter_release(self):
         path = self.root/'ios/StairClimb/Info-Release.plist'
         data = plistlib.loads(path.read_bytes())
-        data['NSAppTransportSecurity'] = ats
+        data['NSAppTransportSecurity'] = {'NSExceptionDomains': {'192.168.0.0/16': {
+            'NSExceptionAllowsInsecureHTTPLoads': True}}}
         path.write_bytes(plistlib.dumps(data))
         self.rejects('Release must use default HTTPS')
+
+    def test_http_address_bypass_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Network/ServiceAddress.swift',
+                     'parts.scheme?.lowercased() == "https"', 'parts.scheme?.lowercased() == "http"')
+        self.rejects('Client address policy must require HTTPS')
+
+    def test_direct_client_bypass_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Network/APIClient.swift',
+                     'try ServiceAddress.validated(baseURL.absoluteString)', 'baseURL')
+        self.rejects('APIClient must revalidate HTTPS')
+
+    def test_tls_minimum_cannot_be_lowered(self):
+        self.replace(self.root/'ios/StairClimb/Network/APIClient.swift', '.TLSv12', '.TLSv10')
+        self.rejects('URLSession must require at least TLS 1.2')
+
+    def test_custom_certificate_trust_bypass_rejected(self):
+        path = self.root/'ios/StairClimb/Network/APIClient.swift'
+        path.write_text(path.read_text() + '\nlet credential = URLCredential(trust: serverTrust)\n')
+        self.rejects('URLSession must preserve system certificate trust')
+
+    def test_credential_redirects_cannot_be_enabled(self):
+        self.replace(self.root/'ios/StairClimb/Network/APIClient.swift',
+                     'completionHandler(nil)', 'completionHandler(request)')
+        self.rejects('Credential redirects must remain disabled')
 
     def test_wrong_configuration_association(self):
         path = self.root/'ios/Config/Debug.xcconfig'

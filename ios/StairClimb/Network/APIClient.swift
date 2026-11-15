@@ -68,7 +68,7 @@ enum NetworkFailure: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .address: "请输入HTTPS服务根地址；Debug仅支持本机、.local或私有局域网HTTP，不能包含账号、路径、查询或片段。"
+        case .address: "请输入HTTPS服务根地址（本机和局域网也须HTTPS），不能包含账号、路径、查询或片段。"
         case .response: "服务器返回不兼容的数据或规则，未视作操作成功。"
         case .transport: "网络不可用、超时或连接失败。请检查地址与网络后重试；未视作操作成功。"
         case .unauthorized: "账号凭证已失效。已停止上传，不会自动创建替代账号。"
@@ -117,13 +117,15 @@ final class APIClient: APIRequesting {
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 20
         configuration.waitsForConnectivity = false
+        configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
         session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }
 
     deinit { session.invalidateAndCancel() }
 
     func send(_ request: APIRequest, token: String?) async throws -> APIEnvelope {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        let approvedURL = try ServiceAddress.validated(baseURL.absoluteString)
+        var components = URLComponents(url: approvedURL, resolvingAgainstBaseURL: false)!
         components.path = request.path
         components.queryItems = request.query.isEmpty ? nil : request.query
         guard let url = components.url else { throw NetworkFailure.address }

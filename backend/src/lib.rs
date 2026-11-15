@@ -1,6 +1,9 @@
+pub mod auth;
 pub mod domain;
 pub mod http;
+pub mod mail;
 pub mod storage;
+pub mod tls;
 
 use serde_json::{json, Value};
 

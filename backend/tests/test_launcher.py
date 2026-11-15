@@ -19,7 +19,7 @@ VARIABLES = ("STAIRCLIMB_HOST", "STAIRCLIMB_PORT", "DATABASE_URL")
 
 class LauncherTests(unittest.TestCase):
     def clean_environment(self):
-        environment = {key: value for key, value in os.environ.items() if key not in VARIABLES}
+        environment = {key: value for key, value in os.environ.items() if key not in VARIABLES and not key.startswith('STAIRCLIMB_TLS_')}
         # Use the same supported interpreter as the test runner in the child shell.
         environment["PATH"] = str(Path(sys.executable).parent) + os.pathsep + environment.get("PATH", "")
         return environment
@@ -72,7 +72,7 @@ class LauncherTests(unittest.TestCase):
                         self.assertEqual(json.loads(response.read())["status"], "ok")
                     finally:
                         connection.close()
-                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 1)
+                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 2)
                     self.assertTrue(Path(f'/proc/{process.pid}/exe').resolve().name == 'stairclimb-server')
                 finally:
                     process.terminate()

@@ -1,0 +1,4 @@
+Command: openssl x509 -in ca.pem -outform DER -out ca.cer
+Verification: openssl x509 [-inform DER] -in <public CA> -noout -fingerprint -sha256
+Result: PEM and DER certificate fingerprints match; exit_status=0
+Private task-only temporary CA directory cleaned; no system/device trust installed.

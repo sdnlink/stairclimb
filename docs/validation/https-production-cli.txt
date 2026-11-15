@@ -1,0 +1,10 @@
+$ python3 -m unittest backend.tests.test_https.HTTPSTests.test_trusted_ca_tls12_and_tls13_health backend.tests.test_https.HTTPSTests.test_development_ca_reuse_permissions_and_overwrite_guard -v
+test_trusted_ca_tls12_and_tls13_health (backend.tests.test_https.HTTPSTests.test_trusted_ca_tls12_and_tls13_health) ... ok
+test_development_ca_reuse_permissions_and_overwrite_guard (backend.tests.test_https.HTTPSTests.test_development_ca_reuse_permissions_and_overwrite_guard) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.759s
+
+OK
+
+exit_status=0

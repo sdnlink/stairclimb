@@ -105,7 +105,7 @@ class Database:
 
 
 class RustServer:
-    def __init__(self, database, clock):
+    def __init__(self, database, clock, *, email_only=False, mail_environment=None, production=False, tls_environment=None):
         self.database = database
         self.clock = clock
         self.temporary = tempfile.TemporaryDirectory(prefix='stairclimb-rust-http-')
@@ -116,13 +116,20 @@ class RustServer:
         self.log_path = self.directory/'server.log'
         self.log = self.log_path.open('w')
         environment = dict(os.environ, DATABASE_URL=database.url)
+        for key in list(environment):
+            if key.startswith('SMTP_') or key.startswith('STAIRCLIMB_TLS_'):
+                environment.pop(key)
+        environment.update(mail_environment or {})
+        environment.update(tls_environment or {})
         # application_name lets tests observe actual row lock waits without HTTP test controls.
         from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
         parts = urlsplit(database.url)
         query = dict(parse_qsl(parts.query), application_name=database.schema)
         environment['DATABASE_URL'] = urlunsplit(parts._replace(query=urlencode(query)))
-        self.process = subprocess.Popen([str(ROOT/'backend/target/debug/stairclimb-test-server'),
-                                         '--host', '127.0.0.1', '--port', '0', '--clock-file', str(self.clock_file)],
+        self.process = subprocess.Popen([str(ROOT/('backend/target/debug/stairclimb-server' if production else 'backend/target/debug/stairclimb-test-server')),
+                                         '--host', '127.0.0.1', '--port', '0',
+                                         *([] if production else ['--clock-file', str(self.clock_file)]),
+                                         *(['--email-only', 'true'] if email_only and not production else [])],
                                         env=environment, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:

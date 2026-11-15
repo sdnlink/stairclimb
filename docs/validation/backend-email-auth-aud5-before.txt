@@ -1,0 +1,17 @@
+$ python3 -m unittest backend.tests.test_email_auth.EmailAuthTests.test_mailbox_owner_can_register_independently_of_unverified_legacy_binding -v
+test_mailbox_owner_can_register_independently_of_unverified_legacy_binding (backend.tests.test_email_auth.EmailAuthTests.test_mailbox_owner_can_register_independently_of_unverified_legacy_binding) ... FAIL
+
+======================================================================
+FAIL: test_mailbox_owner_can_register_independently_of_unverified_legacy_binding (backend.tests.test_email_auth.EmailAuthTests.test_mailbox_owner_can_register_independently_of_unverified_legacy_binding)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 379, in test_mailbox_owner_can_register_independently_of_unverified_legacy_binding
+    self.assertEqual(self.post('register-independent', {
+AssertionError: 404 != 200
+
+----------------------------------------------------------------------
+Ran 1 test in 3.473s
+
+FAILED (failures=1)
+
+exit_status=1

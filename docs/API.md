@@ -2,13 +2,13 @@
 
 已实现健康接口、注册、本人资料、改名、共享同意/撤回、累计同步、真实分页排行榜、本人定位、全部共享步数删除、账号删除及每日运动圈子。圈子规则由追加需求决定，删除共享步数现在同时关闭共享与参与；早期验证记录保留当时契约，不代表现行删除行为。
 
-正式实现为 Rust＋PostgreSQL；启动时应用版本化SQL迁移。历史 Python/SQLite 日志仅作迁移前参考，HTTP契约保持兼容。
+正式实现为 Rust＋PostgreSQL；启动时应用版本化SQL迁移。历史 Python/SQLite 日志仅作迁移前参考，运动字段及隐私契约保持兼容；正式认证升级为邮箱验证与可撤销会话，见[邮箱认证API](EMAIL_AUTH.md)。
 
 ## 通用规则
 
-- 基础路径示例：`http://127.0.0.1:8787`（仅本地开发）。远程客户端应连接部署者提供的 HTTPS 反向代理；此 Rust 服务本身不终止 TLS，不应直接暴露公网。
+- 基础路径示例：`https://127.0.0.1:8443`（可信本地CA）。Rust直接终止TLS1.2/1.3；客户端所有开发/正式通信均HTTPS且正常校验证书。配置见[HTTPS](HTTPS.md)。无TLS的HTTP只能用于回环内部测试，不允许局域网明文。
 - JSON 请求须带 `Content-Type: application/json` 和单个有效 `Content-Length`。请求体上限 4096 字节，不接受 chunked。返回 JSON、`Cache-Control: no-store`，每次请求后关闭连接。
-- 除健康接口和注册外，用 `Authorization: Bearer <本机凭证>` 认证。注册返回的随机 256 位凭证仅返回一次；数据库只保存 SHA-256 摘要。凭证不得写入 URL、日志、源码或配置。注册默认不共享。
+- 除健康及邮箱认证公开入口外，用 `Authorization: Bearer <access会话凭据>` 认证。正式注册需要邮箱验证，登录/刷新返回access与refresh，数据库仅存摘要。旧匿名凭证仅用于绑定和必要的本人隐私管理，不能绕过正式认证。凭据不得写入URL、日志、源码或配置。注册和验证默认不共享。
 - 仅排行榜及当前圈子 GET 接口接受下文列出的查询参数；其他接口拒绝查询参数。所有接口拒绝重复查询键和未定义字段。没有能指定他人 ID 的写接口；`user_id`、`id`、客户端计算的 `floor`、原始健康 `samples` 或来源设备等额外字段都被拒绝。
 - 昵称首尾去除 Unicode 空白后须为 1～24 个 Unicode 码点，可含可见文字、数字、标点、emoji 及内部普通 U+0020 空格；拒绝控制字符、格式字符、换行、非普通内部空白。不要求昵称唯一。
 - 共同日区为 `Asia/Shanghai`，不依赖手机或服务器的系统日区。每个正常返回和业务错误包含服务器当日 `date`（YYYY-MM-DD）、`timezone`、带时区的 `day_start`、`day_end`、`steps_per_floor: 100`、`max_steps: 1000000`、`circle_band_steps: 1000`。
@@ -19,7 +19,7 @@
 | 方法和路径 | 请求体 | 返回 |
 | --- | --- | --- |
 | `GET /health` | 无，无需认证 | `200 {status:"ok", ...日界线规则}` |
-| `POST /v1/users` | `{"nickname":"小楼"}` | `201 {token, user, ...规则}` |
+| `POST /v1/users` | 历史昵称注册 | 正式返回403；仅测试专用匿名回归夹具返回201 |
 | `GET /v1/me` | 无 | `200 {user, ...规则}` |
 | `PATCH /v1/me` | `{"nickname":"新昵称"}` | `200 {user, ...规则}` |
 | `PUT /v1/me/sharing` | `{"enabled":true,"expected_revision":0}` | `200 {user, ...规则}` |
@@ -104,4 +104,4 @@
 | 422 | `invalid_fields`, `invalid_nickname`, `invalid_sharing`, `invalid_participation`, `invalid_revision`, `invalid_steps`, `invalid_date`, `invalid_limit`, `invalid_cursor`, `invalid_snapshot` | 字段、类型或范围非法 |
 | 503 / 500 | `storage_unavailable`, `internal_error` | 临时不可用，不能当作写入成功 |
 
-本地身份没有邮箱、短信或跨设备找回机制。拿到凭证即能操作该身份，凭证遗失不能找回；应用后续使用 Keychain 保存。卸载后 Keychain 是否保留不能作为恢复保证。
+本机UUID仍无恢复接口；旧匿名凭证丢失不能凭user_id找回。完成邮箱验证的账号可通过邮件重置密码；会话需由客户端Keychain安全保存，卸载后Keychain是否保留不能作为恢复保证。认证API、429限流及503邮件错误详见[邮箱认证说明](EMAIL_AUTH.md)。
