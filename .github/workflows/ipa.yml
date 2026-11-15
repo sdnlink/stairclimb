@@ -1,0 +1,100 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: 'IPA signing mode (Ad Hoc requires registered devices)'
+        type: choice
+        default: ad-hoc
+        options:
+          - unsigned
+          - development
+          - ad-hoc
+          - app-store
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'scripts/build_ipa.py'
+      - 'scripts/build_signed_ipa.py'
+      - 'scripts/validate_apple.py'
+      - 'scripts/check_ios_project.py'
+      - 'backend/domain.py'
+      - 'backend/src/domain.rs'
+      - '.github/workflows/ipa.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      IPA_MODE: ${{ inputs.signing || 'unsigned' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and run every XCTest on iOS Simulator
+        run: python3 scripts/validate_apple.py --output .runtime/ipa-validation
+      - name: Archive device Release and package unsigned IPA
+        if: env.IPA_MODE == 'unsigned'
+        run: python3 scripts/build_ipa.py --output .runtime/ipa-package
+      - name: Archive and export signed IPA
+        if: env.IPA_MODE != 'unsigned'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+          BUILD_CERTIFICATE_P12: ${{ secrets.BUILD_CERTIFICATE_P12 }}
+          BUILD_PROVISION_PROFILE: ${{ secrets.BUILD_PROVISION_PROFILE }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          DEV_CERTIFICATE_P12: ${{ secrets.DEV_CERTIFICATE_P12 }}
+          DEV_P12_PASSWORD: ${{ secrets.DEV_P12_PASSWORD }}
+          DEV_PROVISION_PROFILE: ${{ secrets.DEV_PROVISION_PROFILE }}
+          DIST_CERTIFICATE_P12: ${{ secrets.DIST_CERTIFICATE_P12 }}
+          DIST_P12_PASSWORD: ${{ secrets.DIST_P12_PASSWORD }}
+          DIST_PROVISION_PROFILE: ${{ secrets.DIST_PROVISION_PROFILE }}
+        run: python3 scripts/build_signed_ipa.py --mode "$IPA_MODE" --output .runtime/ipa-package
+      - name: Upload IPA and SHA-256
+        uses: actions/upload-artifact@v4
+        with:
+          name: StairClimb-${{ env.IPA_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .runtime/ipa-package/*.ipa
+            .runtime/ipa-package/*.ipa.sha256
+            .runtime/ipa-package/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve build logs and XCTest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StairClimb-ipa-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .runtime/ipa-validation/receipt.json
+            .runtime/ipa-validation/*.log
+            .runtime/ipa-validation/Tests.xcresult
+            .runtime/ipa-package/receipt.json
+            .runtime/ipa-package/*.log
+            .runtime/ipa-package/Archive.xcresult
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Explain artifact
+        if: success()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          爬楼梯 IPA 已构建，下载本次运行的 StairClimb artifact；签名模式见产物名称和 receipt.json。
+          产物包含 IPA、SHA-256 和构建记录；诊断日志与 XCTest 结果另存7天。
+          未签名 IPA 不能直接安装；Development/Ad Hoc 仅支持描述文件内设备。
+          App Store IPA 用于后续分发，此流程未上传 App Store 或 TestFlight。
+          SUMMARY
