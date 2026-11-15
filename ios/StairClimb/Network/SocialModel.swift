@@ -32,6 +32,13 @@ final class SocialModel: ObservableObject {
     @Published private(set) var circleIsStale = false
     @Published private(set) var circleNotice: String?
 
+    @Published private(set) var chatMessages: [CircleMessage] = []
+    @Published private(set) var chatBefore: Int?
+    @Published private(set) var chatNotice: String?
+    @Published private(set) var blockedUsers: [BlockedCircleUser] = []
+    private var chatWatermark: Int?
+    private var chatEpoch = UUID()
+
     let pageSize = 20
     private let vault: NetworkVault
     private let defaults: UserDefaults
@@ -103,6 +110,7 @@ final class SocialModel: ObservableObject {
     }
 
     private func clearCircle(preservingSuccess: Bool = false, notice: String? = nil) {
+        clearChat()
         circle = nil; circleMembers = []; circleTotal = 0; circleNext = nil
         circleVersion = nil; circleParticipating = nil; circleError = nil
         if !preservingSuccess { circleUpdatedAt = nil }
@@ -540,6 +548,7 @@ final class SocialModel: ObservableObject {
             if let previous = circle, previous != channel {
                 circleNotice = "服务器已按今日步数自动迁圈：\(previous.minSteps)–\(previous.maxSteps)步 → \(channel.minSteps)–\(channel.maxSteps)步，旧圈友已替换。"
             }
+            if circle?.id != channel.id { clearChat() }
             circle = channel; circleMembers = combined; circleTotal = total
             circleVersion = version; circleNext = response.nextCursor; circleParticipating = true; circleError = nil
             circleUpdatedAt = clock(); circleIsStale = false
@@ -665,5 +674,135 @@ final class SocialModel: ObservableObject {
         clearBoard(); clearSync()
         do { try persist(); message = "已移除此机凭证；这不删除服务端公开数据。已验证邮箱可重新登录；旧匿名身份丢失凭证后不能恢复。" }
         catch { handle(error) }
+    }
+}
+
+// Messages remain in memory only. Every response is tied to the current day, identity and channel.
+extension SocialModel {
+    var canChat: Bool { CommunityFeatures.chatEnabled && canUpload && circle != nil && circleParticipating == true && !circleIsStale }
+
+    private func clearChat() {
+        chatEpoch = UUID()
+        chatMessages = []; chatBefore = nil; chatWatermark = nil
+        chatNotice = nil; blockedUsers = []
+    }
+
+    private func acceptMessages(_ incoming: [CircleMessage], channel: String) throws {
+        let me = state.identity?.user.id
+        guard incoming.count <= 50, Set(incoming.map(\.id)).count == incoming.count,
+              incoming.allSatisfy({ $0.id > 0 && $0.changeId > 0 && $0.circleId == channel
+                  && $0.isMe == ($0.authorId == me) && $0.text.unicodeScalars.count <= 1000
+                  && (!$0.deleted || $0.text.isEmpty) }) else { throw NetworkFailure.response }
+        var merged = Dictionary(uniqueKeysWithValues: chatMessages.map { ($0.id, $0) })
+        for item in incoming { merged[item.id] = item }
+        chatMessages = merged.values.sorted { $0.id < $1.id }
+        // Bound in-memory history even during a long foreground session.
+        if chatMessages.count > 500 { chatMessages.removeFirst(chatMessages.count - 500) }
+    }
+
+    func refreshChat(older: Bool = false, reset: Bool = false) async {
+        dayChangedIfNeeded()
+        guard canChat, !busy, let channel = circle?.id else { return }
+        if older && chatBefore == nil { return }
+        busy = true
+        let ticket = epoch, chatTicket = chatEpoch
+        defer { finish() }
+        do {
+            var query = [URLQueryItem(name: "circle_id", value: channel), URLQueryItem(name: "limit", value: "20")]
+            if older, let before = chatBefore { query.append(URLQueryItem(name: "before", value: String(before))) }
+            else if !reset, let watermark = chatWatermark, watermark > 0 {
+                query.append(URLQueryItem(name: "after", value: String(watermark)))
+            }
+            let response = try await call(APIRequest(method: "GET", path: "/v1/circles/current/messages", query: query))
+            guard ticket == epoch, chatTicket == chatEpoch, circle?.id == channel, canChat else { return }
+            try checkDay(response)
+            guard response.circleId == channel, let items = response.messages,
+                  let watermark = response.watermark, watermark >= 0 else { throw NetworkFailure.response }
+            if reset { chatMessages = [] }
+            try acceptMessages(items, channel: channel)
+            if older || reset || chatWatermark == nil { chatBefore = response.nextBefore }
+            if !older { chatWatermark = watermark }
+            chatNotice = nil
+        } catch {
+            guard ticket == epoch, chatTicket == chatEpoch else { return }
+            handleChat(error)
+        }
+    }
+
+    private func handleChat(_ error: Error) {
+        if (error as? NetworkFailure) == .pageChanged || (error as? NetworkFailure) == .circleRequired {
+            clearCircle(notice: "频道或参与状态已变化，请刷新今日圈子后继续交流。")
+        }
+        handle(error)
+        chatNotice = error.localizedDescription
+    }
+
+    // A retry uses the same client UUID. A timed-out send never silently duplicates a message.
+    func sendChat(text: String, replyTo: Int?, clientID: UUID) async -> Bool {
+        dayChangedIfNeeded()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canChat, !busy, !trimmed.isEmpty, trimmed.unicodeScalars.count <= 1000, let channel = circle?.id else { return false }
+        busy = true
+        let ticket = epoch, chatTicket = chatEpoch
+        defer { finish() }
+        do {
+            let response = try await call(APIRequest(method: "POST", path: "/v1/circles/current/messages",
+                body: ["circle_id": channel, "text": trimmed, "reply_to": replyTo.map { $0 as Any } ?? NSNull(), "client_id": clientID.uuidString]))
+            guard ticket == epoch, chatTicket == chatEpoch, circle?.id == channel, canChat else { return false }
+            try checkDay(response)
+            guard response.circleId == channel, let item = response.chatMessage else { throw NetworkFailure.response }
+            try acceptMessages([item], channel: channel)
+            chatNotice = nil
+            return true
+        } catch {
+            guard ticket == epoch, chatTicket == chatEpoch else { return false }
+            handleChat(error)
+            return false
+        }
+    }
+
+    func chatAction(_ action: CircleChatAction) async {
+        dayChangedIfNeeded()
+        guard canChat, !busy, let channel = circle?.id else { return }
+        busy = true
+        let ticket = epoch, chatTicket = chatEpoch
+        defer { finish() }
+        do {
+            let request: APIRequest
+            switch action {
+            case .retract(let id):
+                request = APIRequest(method: "DELETE", path: "/v1/circles/current/messages", body: ["circle_id": channel, "message_id": id])
+            case .report(let id, let reason):
+                request = APIRequest(method: "POST", path: "/v1/circles/current/reports", body: ["circle_id": channel, "message_id": id, "reason": reason])
+            case .block(let id, let enabled):
+                request = APIRequest(method: "PUT", path: "/v1/circles/current/blocks", body: ["circle_id": channel, "user_id": id, "enabled": enabled])
+            case .listBlocks:
+                request = APIRequest(method: "GET", path: "/v1/circles/current/blocks", query: [URLQueryItem(name: "circle_id", value: channel)])
+            }
+            let response = try await call(request)
+            guard ticket == epoch, chatTicket == chatEpoch, circle?.id == channel, canChat else { return }
+            try checkDay(response)
+            guard response.circleId == channel else { throw NetworkFailure.response }
+            switch action {
+            case .retract:
+                guard let item = response.chatMessage, item.deleted else { throw NetworkFailure.response }
+                try acceptMessages([item], channel: channel)
+                chatNotice = "消息已撤回。"
+            case .report:
+                guard response.completed == true else { throw NetworkFailure.response }
+                chatNotice = "举报已提交。你也可以屏蔽对方。"
+            case .block(let id, let enabled):
+                guard response.completed == true else { throw NetworkFailure.response }
+                chatMessages = []; chatWatermark = nil; chatBefore = nil
+                if !enabled { blockedUsers.removeAll { $0.userId == id } }
+                chatNotice = enabled ? "已屏蔽，双方后续将互相隐藏圈子消息。" : "已取消屏蔽。"
+            case .listBlocks:
+                guard let users = response.blockedUsers else { throw NetworkFailure.response }
+                blockedUsers = users
+            }
+        } catch {
+            guard ticket == epoch, chatTicket == chatEpoch else { return }
+            handleChat(error)
+        }
     }
 }

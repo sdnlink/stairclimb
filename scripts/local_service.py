@@ -244,7 +244,7 @@ class LocalService:
                 if health['status'] != 'ok' or health['timezone'] != 'Asia/Shanghai':
                     raise ServiceError('Unexpected health response')
                 state['migrations'] = json.loads(pg.sql('SET search_path TO ' + schema + '; SELECT json_agg(version ORDER BY version) FROM schema_migrations;'))
-                if state['migrations'] != [1, 2, 3]:
+                if state['migrations'] != [1, 2, 3, 4]:
                     raise ServiceError('Unexpected database migrations')
                 state['state'] = 'running'
                 state['health'] = health

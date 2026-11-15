@@ -37,14 +37,19 @@ def initialize(directory, name='stairclimb.local', addresses=('127.0.0.1',)):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     directory.chmod(0o700)
     openssl(directory, 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', 'ca-key.pem')
+    # Explicit config avoids duplicate CA extensions from the host's openssl.cnf
+    # when older OpenSSL combines its defaults with repeated -addext arguments.
+    (directory / 'ca.cnf').write_text(
+        '[req]\ndistinguished_name=dn\nx509_extensions=ca_ext\nprompt=no\n'
+        '[dn]\nCN=StairClimb local development CA\n'
+        '[ca_ext]\nbasicConstraints=critical,CA:TRUE,pathlen:0\n'
+        'keyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n')
     openssl(directory, 'req', '-new', '-x509', '-sha256', '-days', '3650', '-key', 'ca-key.pem',
-            '-subj', '/CN=StairClimb local development CA', '-out', 'ca.pem',
-            '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
-            '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
+            '-config', 'ca.cnf', '-out', 'ca.pem')
     openssl(directory, 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', 'server-key.pem')
     openssl(directory, 'req', '-new', '-sha256', '-key', 'server-key.pem', '-subj', '/CN=' + name, '-out', 'server.csr')
     san = ['DNS:' + name, 'DNS:localhost', *['IP:' + ip for ip in addresses]]
-    (directory / 'server.ext').write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=' + ','.join(san) + '\n')
+    (directory / 'server.ext').write_text('subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=' + ','.join(san) + '\n')
     openssl(directory, 'x509', '-req', '-in', 'server.csr', '-CA', 'ca.pem', '-CAkey', 'ca-key.pem',
             '-CAcreateserial', '-days', '30', '-sha256', '-extfile', 'server.ext', '-out', 'server.pem')
     (directory / 'server.env').write_text(

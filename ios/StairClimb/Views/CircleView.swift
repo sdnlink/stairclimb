@@ -17,7 +17,7 @@ struct CircleView: View {
             List {
                 Section("每日自动匹配") {
                     Text("上海 Asia/Shanghai 每天00:00重新匹配，每\(StepRules.circleBandSteps)步一组：0–999、1000–1999等。同组就是同一天的同一频道；跨区间同步后自动迁圈。")
-                    Text("只显示真实成员，小圈不凑人数。历史健康数据不清除；这里不提供即时聊天或真实地理位置。")
+                    Text("只显示真实成员，小圈不凑人数。历史健康数据不清除；不公开真实地理位置。交流功能暂未开放。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.storageReady {
@@ -71,6 +71,9 @@ struct CircleView: View {
                             Button("了解并主动参加") { consent = true }.disabled(model.busy || !model.canUpload)
                         }
                     }
+                    if CommunityFeatures.chatEnabled, let channel = model.circle {
+                        CircleConversation(model: model, channel: channel).id(channel.id)
+                    }
                     Button("读取、同步并刷新今日圈子") { Task { await refresh() } }.disabled(model.busy)
                     if model.circleParticipating == true || model.state.identity?.user.sharingEnabled == true {
                         Button("退出圈子并撤回共享", role: .destructive) { leaving = true }
@@ -108,5 +111,142 @@ struct CircleView: View {
                 Button("取消", role: .cancel) {}
             } message: { Text("立即停止本机上传；服务器确认前显示待完成。重新共享和重新参加都需要主动同意。") }
         }
+    }
+}
+
+@MainActor
+private struct CircleConversation: View {
+    @ObservedObject var model: SocialModel
+    let channel: CircleChannel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
+    @State private var draft = ""
+    @State private var clientID = UUID()
+    @State private var reply: CircleMessage?
+    @State private var reporting: CircleMessage?
+    @State private var blocking: CircleMessage?
+    @State private var retracting: CircleMessage?
+
+    private var polling: Bool { visible && scenePhase == .active }
+
+    var body: some View {
+        Section("圈友交流") {
+            Text("和今天步数相近的人聊聊运动。消息对本频道圈友可见，请勿发送邮箱、电话或住址。")
+                .font(.caption).foregroundStyle(.secondary)
+            if model.chatBefore != nil {
+                Button("查看更早的消息") { Task { await model.refreshChat(older: true) } }.disabled(model.busy)
+            }
+            if model.chatMessages.isEmpty {
+                ContentUnavailableView("还没有聊天消息", systemImage: "bubble.left.and.bubble.right",
+                    description: Text("聊聊今天走了多少步，或给圈友一句鼓励。"))
+            }
+            ForEach(model.chatMessages) { item in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: item.isMe ? "person.crop.circle.fill" : "person.crop.circle")
+                        .font(.title2).foregroundStyle(item.isMe ? Color.accentColor : .secondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(item.nickname + (item.isMe ? " · 我" : "")).font(.subheadline.bold())
+                            Spacer()
+                            Text(ShanghaiDay.timeLabel(for: Date(timeIntervalSince1970: TimeInterval(item.createdAt))))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let id = item.replyTo, !item.deleted {
+                            Text("回复消息 #\(id)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text(item.deleted ? "这条消息已撤回" : item.text)
+                            .foregroundStyle(item.deleted ? .secondary : .primary)
+                            .textSelection(.enabled)
+                        if !item.deleted {
+                            HStack {
+                                Button("回复") { reply = item; clientID = UUID() }
+                                    .buttonStyle(.borderless).disabled(!model.canChat)
+                                Spacer()
+                                Menu {
+                                    if item.isMe {
+                                        Button("撤回消息", role: .destructive) { retracting = item }
+                                    } else {
+                                        Button("举报消息", systemImage: "flag") { reporting = item }
+                                        Button("屏蔽此人", systemImage: "person.crop.circle.badge.xmark", role: .destructive) { blocking = item }
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+                                }.accessibilityLabel("消息操作，\(item.nickname)").disabled(model.busy)
+                            }.font(.caption)
+                        }
+                    }
+                }.padding(.vertical, 4)
+            }
+            if let reply {
+                HStack {
+                    Text("正在回复 \(reply.nickname) · #\(reply.id)").font(.caption)
+                    Spacer()
+                    Button("取消回复") { self.reply = nil; clientID = UUID() }.font(.caption)
+                }
+            }
+            TextField("说点什么，鼓励一下圈友…", text: $draft, axis: .vertical)
+                .lineLimit(2...5).disabled(!model.canChat)
+                .onChange(of: draft) { _, _ in clientID = UUID() }
+            HStack {
+                Text("\(draft.unicodeScalars.count)/1000字").font(.caption).foregroundStyle(draft.unicodeScalars.count > 1000 ? .red : .secondary)
+                Spacer()
+                Button("发送", systemImage: "paperplane.fill") {
+                    let sentID = clientID, text = draft, replyID = reply?.id
+                    Task {
+                        if await model.sendChat(text: text, replyTo: replyID, clientID: sentID), clientID == sentID {
+                            draft = ""; reply = nil; clientID = UUID()
+                        }
+                    }
+                }.buttonStyle(.borderedProminent)
+                    .disabled(model.busy || !model.canChat || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.unicodeScalars.count > 1000)
+            }
+            if let notice = model.chatNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+            Button("刷新聊天") { Task { await model.refreshChat(reset: true) } }.disabled(model.busy)
+            Text("停留本页时约每5秒刷新；迁圈或跨日后进入新的聊天频道。")
+                .font(.caption2).foregroundStyle(.secondary)
+            DisclosureGroup("屏蔽管理") {
+                Button("读取已屏蔽用户") { Task { await model.chatAction(.listBlocks) } }.disabled(model.busy)
+                ForEach(model.blockedUsers) { user in
+                    HStack {
+                        Text(user.nickname)
+                        Spacer()
+                        Button("取消屏蔽") { Task { await model.chatAction(.block(user.userId, false)); await model.refreshChat(reset: true) } }
+                            .disabled(model.busy)
+                    }
+                }
+                Text("屏蔽影响双方圈子聊天，不影响排行榜。只有你能查看自己的屏蔽列表。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: polling) {
+            guard polling else { return }
+            while !Task.isCancelled {
+                await model.refreshChat()
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            }
+        }
+        .confirmationDialog("举报这条消息", isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }), titleVisibility: .visible) {
+            if let item = reporting {
+                Button("垃圾信息或广告") { Task { await model.chatAction(.report(item.id, "spam")) } }
+                Button("辱骂或骚扰") { Task { await model.chatAction(.report(item.id, "abuse")) } }
+                Button("其他不当内容") { Task { await model.chatAction(.report(item.id, "other")) } }
+            }
+            Button("取消", role: .cancel) { reporting = nil }
+        }
+        .alert("屏蔽这位圈友？", isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } })) {
+            if let item = blocking {
+                Button("确认屏蔽", role: .destructive) { Task { await model.chatAction(.block(item.authorId, true)); await model.refreshChat(reset: true) } }
+            }
+            Button("取消", role: .cancel) { blocking = nil }
+        } message: { Text("双方后续将互相隐藏圈子消息，可在屏蔽管理中取消。") }
+        .alert("撤回这条消息？", isPresented: Binding(get: { retracting != nil }, set: { if !$0 { retracting = nil } })) {
+            if let item = retracting {
+                Button("撤回", role: .destructive) { Task { await model.chatAction(.retract(item.id)) } }
+            }
+            Button("取消", role: .cancel) { retracting = nil }
+        } message: { Text("服务器将清空消息正文，圈友刷新后会看到撤回提示。") }
     }
 }

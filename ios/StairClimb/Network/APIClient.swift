@@ -57,6 +57,14 @@ struct APIEnvelope: Decodable {
     let verified: Bool?
     let message: String?
 
+    let circleId: String?
+    let messages: [CircleMessage]?
+    let chatMessage: CircleMessage?
+    let nextBefore: Int?
+    let watermark: Int?
+    let hasMore: Bool?
+    let blockedUsers: [BlockedCircleUser]?
+
     func validateRules() throws {
         guard timezone == ShanghaiDay.timeZoneID, stepsPerFloor == StepRules.stepsPerFloor,
               maxSteps == StepRules.maximumSteps, circleBandSteps == StepRules.circleBandSteps,
@@ -68,6 +76,7 @@ struct APIEnvelope: Decodable {
 }
 
 enum NetworkFailure: Error, LocalizedError, Equatable {
+    case circleRequired, chatRateLimited, invalidChat, messageUnavailable
     case address, response, transport, unauthorized, dayChanged, pageChanged, consentChanged
     case server(String)
     case localData, storage, pendingPrivacy
@@ -75,6 +84,10 @@ enum NetworkFailure: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .circleRequired: "请先主动同意共享并参加今日圈子，再开始交流。"
+        case .chatRateLimited: "发送过快，请稍等10秒再发。"
+        case .invalidChat: "请输入1至1000字的消息，不支持控制字符。"
+        case .messageUnavailable: "消息已撤回、被屏蔽或不属于当前频道，请刷新聊天。"
         case .address: "请输入HTTPS服务根地址（本机和局域网也须HTTPS），不能包含账号、路径、查询或片段。"
         case .response: "服务器返回不兼容的数据或规则，未视作操作成功。"
         case .transport: "网络不可用、超时或连接失败。请检查地址与网络后重试；未视作操作成功。"
@@ -163,6 +176,10 @@ final class APIClient: APIRequesting {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             let code = (json?["error"] as? [String: Any])?["code"] as? String ?? "unknown"
             switch code {
+            case "circle_required": throw NetworkFailure.circleRequired
+            case "chat_rate_limited": throw NetworkFailure.chatRateLimited
+            case "invalid_chat": throw NetworkFailure.invalidChat
+            case "message_unavailable", "message_conflict": throw NetworkFailure.messageUnavailable
             case "authentication_failed": throw NetworkFailure.authentication
             case "invalid_credential": throw NetworkFailure.invalidCredential
             case "rate_limited": throw NetworkFailure.rateLimited

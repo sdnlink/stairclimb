@@ -73,7 +73,7 @@ class LauncherTests(unittest.TestCase):
                         self.assertEqual(json.loads(response.read())["status"], "ok")
                     finally:
                         connection.close()
-                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 3)
+                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 4)
                     self.assertTrue(Path(f'/proc/{process.pid}/exe').resolve().name == 'stairclimb-server')
                 finally:
                     process.terminate()

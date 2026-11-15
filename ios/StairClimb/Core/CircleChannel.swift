@@ -22,3 +22,36 @@ struct CircleChannel: Decodable, Equatable {
                              minSteps: lower, maxSteps: upper, bandSteps: StepRules.circleBandSteps)
     }
 }
+
+
+struct CircleMessage: Decodable, Identifiable, Equatable {
+    let id: Int
+    let circleId: String
+    let authorId: String
+    let nickname: String
+    let text: String
+    let replyTo: Int?
+    let createdAt: Int
+    let deleted: Bool
+    let changeId: Int
+    let isMe: Bool
+}
+
+struct BlockedCircleUser: Decodable, Identifiable {
+    let userId: String
+    let nickname: String
+    var id: String { userId }
+}
+
+enum CircleChatAction {
+    case retract(Int)
+    case report(Int, String)
+    case block(String, Bool)
+    case listBlocks
+}
+
+
+// Chat remains closed until UGC filtering, moderation operations and public contact are ready.
+enum CommunityFeatures {
+    static let chatEnabled = false
+}

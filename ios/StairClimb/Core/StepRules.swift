@@ -29,3 +29,23 @@ struct StepProgress: Equatable {
     var remainingSteps: Int { StepRules.stepsPerFloor - steps % StepRules.stepsPerFloor }
     var fraction: Double { Double(steps % StepRules.stepsPerFloor) / Double(StepRules.stepsPerFloor) }
 }
+
+// Pure, bounded presentation rules. The authoritative step snapshot is immutable.
+enum StaircaseRules {
+    static let maximumFloor = StepRules.maximumSteps / StepRules.stepsPerFloor
+    static func centeredBase(_ floor: Int) -> Int { max(0, min(maximumFloor - 4, floor - 2)) }
+    static func maximumBase(near floor: Int) -> Int { max(0, min(maximumFloor - 4, floor + 1)) }
+    static func browse(base: Int, delta: Int, near floor: Int) -> Int {
+        // UI sends small deltas; clamp before adding to avoid overflowing foreign input.
+        max(0, min(maximumBase(near: floor), base + max(-5, min(5, delta))))
+    }
+    static func route(from old: Int?, to target: Int, replay: Bool, animated: Bool) -> [Int] {
+        let end = max(0, min(maximumFloor, target))
+        guard animated else { return [end] }
+        guard let old else { return [end] } // First read/day change never replays yesterday.
+        let start = max(0, min(maximumFloor, old))
+        if replay { return Array(max(0, end - 4)...end) }
+        guard end > start else { return [end] }
+        return Array(max(start, end - 8)...end)
+    }
+}

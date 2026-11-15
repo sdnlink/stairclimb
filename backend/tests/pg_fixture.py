@@ -118,7 +118,7 @@ class RustServer:
         self.log = self.log_path.open('w')
         environment = dict(os.environ, DATABASE_URL=database.url)
         for key in list(environment):
-            if key.startswith('SMTP_') or key.startswith('STAIRCLIMB_TLS_') or key.startswith('STAIRCLIMB_DB_POOL_'):
+            if key.startswith('SMTP_') or key.startswith('STAIRCLIMB_TLS_') or key.startswith('STAIRCLIMB_DB_POOL_') or key == 'STAIRCLIMB_TEST_CHAT':
                 environment.pop(key)
         environment.update(mail_environment or {})
         environment.update(tls_environment or {})

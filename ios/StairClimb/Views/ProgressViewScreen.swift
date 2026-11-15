@@ -20,7 +20,8 @@ struct ProgressViewScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-                    StaircaseView(progress: model.snapshot?.progress)
+                    StaircaseView(progress: model.snapshot?.progress, day: model.day.date,
+                                  isStale: model.snapshotIsStale)
                     metrics
                     healthStatus
                     privacyNote
@@ -187,55 +188,251 @@ struct ProgressViewScreen: View {
     }
 }
 
+// Presentation state only: no HealthKit writes, synthetic steps or network uploads.
 @MainActor
 private struct StaircaseView: View {
     let progress: StepProgress?
-    private let visibleSteps = 5
+    let day: String
+    let isStale: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var displayedFloor = 0
+    @State private var windowBase = 0
+    @State private var selectedFloor: Int?
+    @State private var renderedDay: String?
+    @State private var replay = 0
+    @State private var renderedReplay = 0
+    @State private var walking = false
+    @State private var stride = false
+    @State private var arrival = 0
+    @State private var selectionFeedback = 0
+    @State private var animationCaption = ""
+
+    private struct PlaybackKey: Equatable {
+        let progress: StepProgress?
+        let day: String
+        let reduceMotion: Bool
+        let isStale: Bool
+        let active: Bool
+        let replay: Int
+    }
+    private var playbackKey: PlaybackKey {
+        PlaybackKey(progress: progress, day: day, reduceMotion: reduceMotion,
+                    isStale: isStale, active: scenePhase == .active, replay: replay)
+    }
+    private var actualFloor: Int { progress?.floor ?? 0 }
+    private var viewingFloor: Int { selectedFloor ?? actualFloor }
+    private var canInteract: Bool { progress != nil && !walking && scenePhase == .active }
 
     var body: some View {
+        VStack(spacing: 0) {
+            scene
+            interaction
+        }
+        .background(Palette.jade)
+        .clipShape(RoundedRectangle(cornerRadius: 28))
+        .task(id: playbackKey) { await updateScene() }
+        .sensoryFeedback(.success, trigger: arrival)
+        .sensoryFeedback(.selection, trigger: selectionFeedback)
+    }
+
+    private var scene: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let base = max(0, (progress?.floor ?? 0) - 2)
-            let current = (progress?.floor ?? 0) - base
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(LinearGradient(colors: [Palette.jade, Color(red: 0.04, green: 0.27, blue: 0.29)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("今天的高度").font(.caption.weight(.medium)).opacity(0.8)
-                    Text(progress.map { "\($0.floor)F" } ?? "— F")
-                        .font(.system(size: 50, weight: .bold, design: .rounded))
-                }
-                .foregroundStyle(.white).padding(24).frame(maxHeight: .infinity, alignment: .topLeading)
-
-                ForEach(0..<visibleSteps, id: \.self) { index in
-                    let stepWidth = (width - 40) / CGFloat(visibleSteps)
-                    let height = CGFloat(35 + index * 28)
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(.white.opacity(index == current ? 0.95 : 0.15 + Double(index) * 0.03))
-                        .frame(width: stepWidth + 2, height: height)
-                        .overlay(alignment: .top) {
-                            Text("\(base + index)F")
-                                .font(.caption2.bold()).monospacedDigit()
-                                .foregroundStyle(index == current ? Palette.jade : .white.opacity(0.8))
-                                .padding(.top, 9)
-                        }
-                        .offset(x: 20 + CGFloat(index) * stepWidth, y: -20)
-                    if index == current {
-                        VStack(spacing: 4) {
-                            Text("我").font(.caption2.bold())
-                            Image(systemName: "figure.walk").font(.system(size: 28, weight: .medium))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(width: stepWidth)
-                        .offset(x: 20 + CGFloat(index) * stepWidth, y: -height - 29)
+            let stepWidth = max(1, (width - 40) / 5)
+            ZStack(alignment: .topLeading) {
+                LinearGradient(colors: [Palette.jade, Color(red: 0.04, green: 0.27, blue: 0.29)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("今天的高度").font(.caption.weight(.medium)).opacity(0.8)
+                        Spacer()
+                        if isStale { Label("缓存进度", systemImage: "clock").font(.caption2) }
                     }
+                    Text(progress.map { "\($0.floor)F" } ?? "— F")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText())
+                    Text(animationCaption.isEmpty ? "点选楼层，左右滑动浏览" : animationCaption)
+                        .font(.caption2).opacity(0.85)
+                }
+                .foregroundStyle(.white).padding(24)
+                .accessibilityElement(children: .combine)
+
+                ForEach(0..<5, id: \.self) { index in
+                    let floor = windowBase + index
+                    let current = floor == actualFloor
+                    let selected = floor == viewingFloor
+                    let height = CGFloat(44 + index * 27)
+                    Button { select(floor) } label: {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(current ? Color.white.opacity(0.96) : Color.white.opacity(selected ? 0.4 : 0.16))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(Color.white.opacity(selected ? 0.85 : 0), lineWidth: 2)
+                            }
+                            .overlay(alignment: .top) {
+                                Text("\(floor)F").font(.caption2.bold()).monospacedDigit()
+                                    .foregroundStyle(current ? Palette.jade : .white)
+                                    .padding(.top, 9)
+                            }
+                            .frame(width: max(1, stepWidth - 2), height: height)
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: 20 + (CGFloat(index) + 0.5) * stepWidth, y: 276 - height / 2)
+                    .disabled(!canInteract || floor > StaircaseRules.maximumFloor)
+                    .accessibilityLabel("第\(floor)层" + (current ? "，我的当前位置" : ""))
+                    .accessibilityValue(detail(for: floor))
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                if progress != nil && (windowBase...(windowBase + 4)).contains(displayedFloor) {
+                    let index = CGFloat(displayedFloor - windowBase)
+                    VStack(spacing: 3) {
+                        Text(walking ? "向上" : "我").font(.caption2.bold())
+                        Image(systemName: stride ? "figure.walk" : "figure.stairs")
+                            .font(.system(size: 28, weight: .medium))
+                            .rotationEffect(.degrees(walking && stride && !reduceMotion ? -8 : 0))
+                    }
+                    .foregroundStyle(.white)
+                    .position(x: 20 + (index + 0.5) * stepWidth,
+                              y: 276 - (44 + index * 27) - 32 - (stride && !reduceMotion ? 5 : 0))
+                    .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
+            .contentShape(Rectangle())
+            .simultaneousGesture(DragGesture(minimumDistance: 26).onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
+                      abs(value.translation.width) > 44 else { return }
+                browse(value.translation.width < 0 ? 3 : -3)
+            })
         }
-        .frame(height: 295)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(progress.map { "我在第\($0.floor)个虚拟楼层，距下一层\($0.remainingSteps)步" } ?? "楼梯进度尚未读取")
+        .frame(height: 296)
+    }
+
+    private var interaction: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let progress {
+                HStack {
+                    Text("下一层 \(actualFloor + 1)F").font(.caption.weight(.semibold))
+                    Spacer()
+                    Text("还差 \(progress.remainingSteps) 步").font(.caption.monospacedDigit())
+                }
+                SwiftUI.ProgressView(value: progress.fraction)
+                    .tint(.white)
+                    .accessibilityLabel("距下一层的步数进度")
+                    .accessibilityValue("已完成\(progress.steps % StepRules.stepsPerFloor)步，还差\(progress.remainingSteps)步")
+                Text(detail(for: viewingFloor))
+                    .font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button { browse(-3) } label: {
+                        Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                    }.accessibilityLabel("浏览较低楼层")
+                        .disabled(!canInteract || windowBase == 0)
+                    Button { returnToMe() } label: {
+                        Label("回到我", systemImage: "location.fill").font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }.disabled(!canInteract)
+                    Spacer(minLength: 0)
+                    Button { replay += 1 } label: {
+                        Label("回放登梯", systemImage: "play.fill").font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(!canInteract || reduceMotion || isStale || actualFloor == 0)
+                    .accessibilityHint("仅回放最多四层已完成进度，不增加步数或触发同步")
+                    Button { browse(3) } label: {
+                        Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                    }.accessibilityLabel("浏览较高楼层")
+                        .disabled(!canInteract || windowBase >= StaircaseRules.maximumBase(near: actualFloor))
+                }
+                .buttonStyle(.plain)
+                Text(reduceMotion ? "已遵循减少动态效果；仍可点选楼层。" : "回放仅展示已完成楼层，不增加运动步数。")
+                    .font(.caption2).opacity(0.75)
+            } else {
+                Label("连接 Apple 健康后，点亮你的第一层", systemImage: "heart")
+                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                Text("这里不会生成演示步数。")
+                    .font(.caption2).opacity(0.75)
+            }
+        }
+        .foregroundStyle(.white).padding(.horizontal, 20).padding(.bottom, 18)
+    }
+
+    private func detail(for floor: Int) -> String {
+        guard let progress else { return "尚未读取今日步数" }
+        if floor == progress.floor {
+            return "我在第\(floor)层 · 再走\(progress.remainingSteps)步到下一层"
+        }
+        if floor < progress.floor { return "第\(floor)层已走过 · 对应\(floor * StepRules.stepsPerFloor)步" }
+        return "第\(floor)层尚未到达 · 还需\(floor * StepRules.stepsPerFloor - progress.steps)步"
+    }
+
+    private func select(_ floor: Int) {
+        guard canInteract else { return }
+        selectedFloor = floor
+        if !reduceMotion { selectionFeedback += 1 }
+    }
+
+    private func browse(_ delta: Int) {
+        guard canInteract else { return }
+        let next = StaircaseRules.browse(base: windowBase, delta: delta, near: actualFloor)
+        change { windowBase = next; selectedFloor = min(next + 2, StaircaseRules.maximumFloor) }
+        if !reduceMotion { selectionFeedback += 1 }
+    }
+
+    private func returnToMe() {
+        change { windowBase = StaircaseRules.centeredBase(actualFloor); selectedFloor = nil }
+    }
+
+    private func change(_ action: () -> Void) {
+        if reduceMotion { action() }
+        else { withAnimation(.spring(response: 0.34, dampingFraction: 0.85), action) }
+    }
+
+    private func updateScene() async {
+        // SwiftUI cancels the previous task when day, data, visibility or replay changes.
+        let sameDay = renderedDay == day
+        let previous = sameDay ? displayedFloor : nil
+        let isReplay = replay != renderedReplay && sameDay
+        renderedReplay = replay
+        let plan = StaircaseRules.route(from: previous, to: actualFloor,
+                                       replay: isReplay, animated: !reduceMotion && !isStale)
+        renderedDay = day
+        selectedFloor = nil
+        walking = false
+        stride = false
+        guard progress != nil, scenePhase == .active else {
+            displayedFloor = actualFloor
+            windowBase = StaircaseRules.centeredBase(actualFloor)
+            animationCaption = progress == nil ? "等待真实今日步数" : ""
+            return
+        }
+        displayedFloor = plan[0]
+        windowBase = max(0, min(StaircaseRules.maximumFloor - 4, displayedFloor - 1))
+        if plan.count == 1 {
+            windowBase = StaircaseRules.centeredBase(actualFloor)
+            animationCaption = isStale ? "上次读取的缓存，刷新后查看新进度" : "点选楼层，左右滑动浏览"
+            return
+        }
+        walking = true
+        animationCaption = isReplay ? "已完成进度回放 · 不计入步数" : "向上前进 · 展示最近\(plan.count - 1)层"
+        defer { walking = false; stride = false }
+        do {
+            for floor in plan.dropFirst() {
+                try await Task.sleep(for: .milliseconds(320))
+                try Task.checkCancellation()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    if floor > windowBase + 4 { windowBase = floor - 3 }
+                    displayedFloor = floor
+                    stride.toggle()
+                }
+            }
+            try Task.checkCancellation()
+            if !isReplay && sameDay && previous.map({ actualFloor > $0 }) == true {
+                arrival += 1
+            }
+            animationCaption = isReplay ? "回放结束 · 步数未改变" : "已到达第\(actualFloor)层"
+        } catch {
+            // A newer query/day/background state owns the next scene. No model writes.
+        }
     }
 }
 

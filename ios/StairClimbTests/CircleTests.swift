@@ -173,6 +173,20 @@ final class CircleStateTests: XCTestCase {
 
     private func release() { let pending = api.pending; api.pending = nil; pending?.resume() }
 
+    func testClosedChatNeverSendsEvenForJoinedMember() async {
+        await joined()
+        XCTAssertNotNil(model.circle)
+        XCTAssertFalse(CommunityFeatures.chatEnabled)
+        XCTAssertFalse(model.canChat)
+        let count = api.requests.count
+        await model.refreshChat()
+        let sent = await model.sendChat(text: "一起加油", replyTo: nil, clientID: UUID())
+        await model.chatAction(.listBlocks)
+        XCTAssertFalse(sent)
+        XCTAssertEqual(api.requests.count, count)
+        XCTAssertTrue(model.chatMessages.isEmpty)
+    }
+
     func testRefreshNeverJoinsAndExplicitJoinLoadsRealMembers() async {
         await model.refresh()
         await model.refreshCircle()

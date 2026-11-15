@@ -54,3 +54,8 @@ Apple 的[xcodebuild命令说明](https://developer.apple.com/library/archive/te
 | 视觉与辅助功能 | 在小/大屏及较大字体、VoiceOver检查中文文本、楼梯上的本人、楼层/剩余步数、加载/错误状态、缓存提示和成功时间；无裁切或按钮不可达。由实际设备记录问题，源码检查不代表通过。 |
 
 每次Mac/iPhone验收记录源版本、设备型号、系统/Xcode版本、时间、实际命令/退出码、通过/失败/未执行及脱敏证据。模拟器XCTest通过也不能证明真机HealthKit、签名、系统证书信任或视觉体验通过；这些是待设备执行的验证限制，不应通过降低安全策略绕过。
+
+
+## IPA 打包流程
+
+新增[Build iOS IPA workflow](../.github/workflows/ipa.yml)，在同一完整模拟器验证入口通过后执行真机架构Release归档并打包。支持无签名和Development/Ad Hoc/App Store手动签名导出，现有GitHub证书变量的完整映射、产物下载及安装限制见[IPA打包](IPA_BUILD.md)。当前无远程Actions执行记录，不能以配置文件存在代替真实构建通过。

@@ -15,6 +15,7 @@ pub struct Application {
     pool: crate::pool::Pool,
     pub clock: Clock,
     pub(crate) legacy_test_mode: bool,
+    pub(crate) chat_test_mode: bool,
 }
 #[derive(Clone)]
 pub(crate) struct User {
@@ -129,6 +130,7 @@ impl Application {
             database_url,
             clock,
             legacy_test_mode: cfg!(test),
+            chat_test_mode: false,
         };
         app.migrate()?;
         Ok(app)
@@ -143,6 +145,7 @@ impl Application {
         tx.batch_execute(include_str!("../migrations/001_initial.sql"))?;
         tx.batch_execute(include_str!("../migrations/002_email_auth.sql"))?;
         tx.batch_execute(include_str!("../migrations/003_data_access.sql"))?;
+        tx.batch_execute(include_str!("../migrations/004_circle_chat.sql"))?;
         tx.commit()?;
         Ok(())
     }
@@ -165,6 +168,14 @@ impl Application {
         params: &HashMap<String, String>,
         source: &str,
     ) -> Result<(u16, Value)> {
+        if matches!(
+            path,
+            "/v1/circles/current/messages"
+                | "/v1/circles/current/blocks"
+                | "/v1/circles/current/reports"
+        ) {
+            return self.chat_dispatch(method, path, authorization, body, params);
+        }
         if path.starts_with("/v1/auth/") {
             return self.auth_dispatch(method, path, authorization, body, source);
         }
@@ -177,7 +188,13 @@ impl Application {
         let legacy_ok = self.legacy_test_mode || privacy;
         let context = day_context(self.clock.now()?);
         if method == "GET" && path == "/health" {
-            return Ok((200, merge(json!({"status":"ok"}), context)));
+            return Ok((
+                200,
+                merge(
+                    json!({"status":"ok","chat_enabled":self.chat_test_mode}),
+                    context,
+                ),
+            ));
         }
         if method == "POST" && path == "/v1/users" {
             if !self.legacy_test_mode {
@@ -722,7 +739,7 @@ mod tests {
             db.query_one("SELECT MAX(version) FROM schema_migrations", &[])
                 .unwrap()
                 .get::<_, i64>(0),
-            3
+            4
         );
     }
     #[test]

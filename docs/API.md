@@ -111,3 +111,8 @@
 连接池和锁顺序见[访问边界](DATA_ACCESS.md)。获取连接超过配置期限返回`503 database_busy`；连接创建或查询失败继续返回脱敏`503 storage_unavailable`。两者不表示同步或删除已完成，不自动重放写入。`/health`仍是进程存活检查，不借连接检查数据库就绪。
 
 榜单和圈友的COUNT、窗口排序、当前页或本人记录在同一只读repeatable-read事务内完成。页大小、游标、总数、并列排名、零值用户和快照失效契约保持不变；数据库每页最多返回limit名成员到Rust，本人定位最多返回一名。迁移003仅增加索引及版本记录，保留现有账号、会话、共享版本与历史。
+
+
+## 未开放的圈子交流
+
+按项目所有者要求，正式环境的`/v1/circles/current/messages`、`/v1/circles/current/reports`和`/v1/circles/current/blocks`统一返回503 `chat_disabled`，不接受聊天内容。`/health`新增`chat_enabled: false`。只有隔离测试服务可显式开启开发接口，草案及上线前置条件见[运动圈交流状态](CIRCLE_COMMUNITY.md)。

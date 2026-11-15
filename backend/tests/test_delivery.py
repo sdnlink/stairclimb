@@ -53,7 +53,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(result['me']['entry']['steps'], 101)
         self.assertFalse(result['circles']['participating'])
         self.assertEqual(result['health']['date'], datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat())
-        self.assertEqual(state['migrations'], [1, 2, 3])
+        self.assertEqual(state['migrations'], [1, 2, 3, 4])
         self.assertEqual(self.database.execute('SELECT COUNT(*) FROM users').fetchone()[0], 0)
         self.assertEqual(self.database.execute('SELECT COUNT(*) FROM email_accounts').fetchone()[0], 0)
         executable = Path(f'/proc/{state["processes"]["rust"]["pid"]}/exe')
@@ -115,7 +115,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(state['state'], 'stopped')
         for record in state['processes'].values():
             self.assertIsNone(identity(record['pid']))
-        self.assertEqual(self.database.execute('SELECT COUNT(*) FROM schema_migrations').fetchone()[0], 3)
+        self.assertEqual(self.database.execute('SELECT COUNT(*) FROM schema_migrations').fetchone()[0], 4)
 
     def test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts(self):
         self.start()

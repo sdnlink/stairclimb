@@ -108,6 +108,8 @@ fn query(path: &str, raw: &str) -> Result<HashMap<String, String>> {
         "/v1/leaderboard/me" | "/v1/circles/current" | "/v1/circles/current/me" => {
             &["limit", "snapshot"]
         }
+        "/v1/circles/current/messages" => &["circle_id", "limit", "before", "after"],
+        "/v1/circles/current/blocks" => &["circle_id"],
         "/v1/circles/current/members" => &["limit", "cursor", "snapshot"],
         _ => &[],
     };
@@ -204,17 +206,22 @@ fn read_request(stream: &mut impl Read) -> Result<Request> {
             return Err(ApiError::new(
                 413,
                 "body_too_large",
-                "请求体不得超过4096字节",
+                "请求体超过接口字节上限",
             ));
         }
         let length = lengths[0]
             .parse::<usize>()
             .map_err(|_| ApiError::new(400, "invalid_body", "Content-Length无效"))?;
-        if length > MAX_BODY_BYTES {
+        let body_limit = if method == "POST" && path == "/v1/circles/current/messages" {
+            16_384
+        } else {
+            MAX_BODY_BYTES
+        };
+        if length > body_limit {
             return Err(ApiError::new(
                 413,
                 "body_too_large",
-                "请求体不得超过4096字节",
+                "请求体超过接口字节上限",
             ));
         }
         if headers
@@ -389,9 +396,13 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
     .map_err(|_| "database unavailable")?;
     // Only the test binary can use anonymous regression fixtures. Production never opts in.
     app.legacy_test_mode = test_mode && !email_only;
+    // The production executable always passes test_mode=false. Chat remains closed.
+    app.chat_test_mode = test_mode
+        && cfg!(feature = "test-support")
+        && std::env::var("STAIRCLIMB_TEST_CHAT").as_deref() == Ok("1");
     let app = Arc::new(app);
     let listener = TcpListener::bind((host.as_str(), port.parse::<u16>()?))?;
-    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=3; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
+    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=4; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
     std::io::stdout().flush()?;
     let active = Arc::new(AtomicUsize::new(0));
     for socket in listener.incoming() {
