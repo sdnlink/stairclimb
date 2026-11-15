@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum Palette {
     static let ink = Color(red: 0.10, green: 0.19, blue: 0.24)
@@ -11,6 +12,7 @@ struct ProgressViewScreen: View {
     @ObservedObject var model: LocalAppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var editingIdentity = false
+    @State private var showingHealthHelp = false
     private let datePulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var busy: Bool { model.phase == .loading || model.phase == .requesting }
@@ -47,6 +49,7 @@ struct ProgressViewScreen: View {
         .tint(Palette.jade)
         .preferredColorScheme(.light)
         .sheet(isPresented: $editingIdentity) { IdentitySheet(model: model) }
+        .sheet(isPresented: $showingHealthHelp) { HealthConnectionHelp(model: model) }
         .task { await model.activate() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.activate() } }
@@ -111,6 +114,11 @@ struct ProgressViewScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(statusTitle, systemImage: statusSymbol).font(.headline)
             Text(statusDetail).font(.subheadline).foregroundStyle(.secondary)
+            if let diagnostic = model.healthDiagnostic {
+                Text("错误编号：\(diagnostic)").font(.caption.monospaced()).textSelection(.enabled)
+            }
+            Button("健康连接帮助", systemImage: "questionmark.circle") { showingHealthHelp = true }
+                .font(.subheadline)
             if let snapshot = model.snapshot {
                 Text("上次成功读取 · 上海 \(ShanghaiDay.timeLabel(for: snapshot.readAt))")
                     .font(.caption).foregroundStyle(.secondary)
@@ -471,6 +479,48 @@ private struct IdentitySheet: View {
             .navigationTitle("本机身份").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
             .onAppear { nickname = model.identity?.nickname ?? "" }
+        }
+    }
+}
+
+
+@MainActor
+private struct HealthConnectionHelp: View {
+    @ObservedObject var model: LocalAppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("检查健康访问") {
+                    Text("保持 iPhone 解锁并让应用处于前台，先打开 Apple 健康 App，确认今天的步数中有记录。")
+                    Text("在健康 App 的个人头像中找到“App”或“App 和服务”，选择“爬楼梯”，检查步数读取权限。不同 iOS 版本的菜单名称可能略有不同。")
+                    Text("若列表中没有本应用，返回此页请求健康访问。完成系统流程不代表一定授予读取；当无记录或未开放读取时，App无法区分原因。")
+                    Button("重新请求健康访问") { Task { await model.requestHealthAccess() } }
+                        .disabled(model.phase == .requesting || model.phase == .loading || model.phase == .unavailable)
+                    Link("打开本应用设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                    Text("设置页不一定提供健康权限开关；请以健康 App 的权限页面为准。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("设备与安装包") {
+                    Text("模拟器没有真实 iPhone 步数；正式验证请使用有步数记录的 iPhone。")
+                    Text("若通过第三方工具重新签名安装，需保留 HealthKit 权限，并使用 App ID 已启用 HealthKit 的描述文件。没有此能力的安装包需要重新构建，无法通过重复点击授权修复。")
+                    Text("设备受管理或开启限制策略时，健康访问可能不可用。")
+                }
+                Section("排查信息") {
+                    LabeledContent("iOS", value: UIDevice.current.systemVersion)
+                    LabeledContent("应用版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+                    LabeledContent("构建号", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")
+                    LabeledContent("应用标识", value: Bundle.main.bundleIdentifier ?? "—")
+                    if let diagnostic = model.healthDiagnostic {
+                        Text("错误编号：\(diagnostic)").textSelection(.enabled)
+                    }
+                    Text("反馈时可提供上方错误编号和安装方式，无需发送健康记录或账号凭证。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("健康连接帮助")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
     }
 }

@@ -1,4 +1,5 @@
 import XCTest
+import HealthKit
 @testable import StairClimb
 
 @MainActor
@@ -103,6 +104,36 @@ final class LocalAppModelTests: XCTestCase {
         await model.requestHealthAccess()
         XCTAssertEqual(model.phase, .failed)
         XCTAssertNil(model.snapshot)
+    }
+
+    func testHealthFailureExplainsLockedDatabaseAndPreservesRealSteps() async {
+        await model.requestHealthAccess()
+        reader.result = .failure(NSError(domain: HKErrorDomain,
+            code: HKError.Code.errorDatabaseInaccessible.rawValue))
+        await model.refresh()
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertEqual(model.snapshot?.progress.steps, 101)
+        XCTAssertTrue(model.snapshotIsStale)
+        XCTAssertTrue(model.readingError?.contains("解锁") == true)
+        XCTAssertEqual(model.healthDiagnostic, "\(HKErrorDomain) · \(HKError.Code.errorDatabaseInaccessible.rawValue)")
+        reader.result = .success(.total(200))
+        await model.refresh()
+        XCTAssertNil(model.healthDiagnostic)
+        XCTAssertNil(model.readingError)
+        XCTAssertEqual(model.snapshot?.progress.steps, 200)
+    }
+
+    func testRequestFailureHasSafeDiagnosticAndCannotClaimCompletedAuthorization() async {
+        reader.accessError = NSError(domain: HKErrorDomain,
+            code: HKError.Code.errorHealthDataRestricted.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "private health query contents"])
+        await model.requestHealthAccess()
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertFalse(model.hasRequestedHealthAccess)
+        XCTAssertTrue(reader.queryDays.isEmpty)
+        XCTAssertTrue(model.readingError?.contains("限制") == true)
+        XCTAssertFalse(model.readingError?.contains("private") == true)
+        XCTAssertNotNil(model.healthDiagnostic)
     }
 
     func testAuthorizationFailureCanRetry() async {
@@ -236,5 +267,36 @@ final class LocalAppModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .data)
         XCTAssertEqual(model.snapshot?.progress.steps, 101)
         XCTAssertNil(store.data)
+    }
+}
+
+
+final class HealthQueryResultTests: XCTestCase {
+    func testEmptyStatisticsAndExplicitNoDataAreEmptyRatherThanFailedReads() throws {
+        XCTAssertEqual(try HealthStepReader.result(total: nil, error: nil), .noReadableData)
+        let empty = NSError(domain: HKErrorDomain, code: HKError.Code.errorNoData.rawValue)
+        XCTAssertEqual(try HealthStepReader.result(total: nil, error: empty), .noReadableData)
+        XCTAssertEqual(try HealthStepReader.result(total: 0, error: nil), .total(0))
+        XCTAssertEqual(try HealthStepReader.result(total: 101, error: nil), .total(101))
+    }
+
+    func testDatabaseAndAuthorizationFailuresNeverBecomeEmptyOrZeroSteps() {
+        for code in [HKError.Code.errorDatabaseInaccessible, .errorAuthorizationDenied, .errorHealthDataRestricted] {
+            let failure = NSError(domain: HKErrorDomain, code: code.rawValue)
+            XCTAssertThrowsError(try HealthStepReader.result(total: nil, error: failure))
+            XCTAssertThrowsError(try HealthStepReader.result(total: 100, error: failure))
+        }
+        let unrelated = NSError(domain: NSCocoaErrorDomain, code: HKError.Code.errorNoData.rawValue)
+        XCTAssertThrowsError(try HealthStepReader.result(total: nil, error: unrelated))
+    }
+
+    func testFailurePresentationDoesNotRevealRawSystemMessageOrUserInfo() {
+        let failure = NSError(domain: "private-user-specific-domain", code: 123,
+                              userInfo: [NSLocalizedDescriptionKey: "private sample or credential"])
+        XCTAssertEqual(HealthFailureMessage.diagnostic(for: failure), "SystemError · 123")
+        XCTAssertFalse(HealthFailureMessage.detail(for: failure, requesting: false).contains("private"))
+        let notDetermined = NSError(domain: HKErrorDomain,
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue)
+        XCTAssertTrue(HealthFailureMessage.detail(for: notDetermined, requesting: false).contains("健康访问"))
     }
 }

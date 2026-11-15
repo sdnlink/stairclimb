@@ -183,3 +183,6 @@ python3 scripts/import_sqlite.py --sqlite /absolute/path/to/legacy.sqlite3 --sch
 工具通过 SQLite online backup 创建一致备份到 `.runtime/backups/`（600权限，即使有WAL也不遗漏提交数据），在单个PostgreSQL事务内应用迁移并导入，拒绝非空目标而不清空它。逐字段核对全部用户ID、凭证摘要、昵称、同意版本/开关、圈子参与及各日期累计值/时间戳，并核对分页版本，输出仅有数量、备份路径及摘要。源库保持原样；失败保留备份用于排查，不自动删除源数据。较早仅身份/缺圈子表的库可导入，缺失参与默认为不参加。使用导入schema时在被忽略的连接配置中设置 PostgreSQL `options=-csearch_path=import_<对应32位ID>`，不要改写源码或公开连接凭证。
 
 最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL迁移当时的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹保留于[迁移验证](docs/verification-06-rust-postgres.md)。这些历史日志保持原样，当前完整集成及运行交接见[交付说明](docs/DELIVERY.md)。
+
+
+Apple健康连接失败时，先查看“我的楼梯 → 健康连接帮助”。无可读步数、设备锁定和访问请求失败现在分别提示，并显示安全错误编号；详见[健康连接排查](docs/HEALTH_CONNECTION.md)。

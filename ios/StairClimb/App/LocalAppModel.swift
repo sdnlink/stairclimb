@@ -19,6 +19,7 @@ final class LocalAppModel: ObservableObject {
     @Published private(set) var snapshot: LocalSnapshot?
     @Published private(set) var phase: ReadingPhase = .needsRequest
     @Published private(set) var readingError: String?
+    @Published private(set) var healthDiagnostic: String?
     @Published private(set) var snapshotIsStale = false
 
     var hasRequestedHealthAccess: Bool { defaults.bool(forKey: Self.attemptedKey) }
@@ -75,6 +76,8 @@ final class LocalAppModel: ObservableObject {
         guard reader.isAvailable else { phase = .unavailable; return }
         requestingAccess = true
         phase = .requesting
+        readingError = nil
+        healthDiagnostic = nil
         defer { requestingAccess = false }
         do {
             try await reader.requestAccess()
@@ -83,7 +86,8 @@ final class LocalAppModel: ObservableObject {
             await refresh()
         } catch {
             updateDayIfNeeded()
-            readingError = "健康访问请求未完成，请重试。未将失败视作零步。"
+            readingError = HealthFailureMessage.detail(for: error, requesting: true)
+            healthDiagnostic = HealthFailureMessage.diagnostic(for: error)
             phase = .failed
         }
     }
@@ -99,6 +103,7 @@ final class LocalAppModel: ObservableObject {
         generation = ticket
         phase = .loading
         readingError = nil
+        healthDiagnostic = nil
         do {
             let reading = try await reader.readSteps(in: queriedDay)
             guard ticket == generation else { return }
@@ -117,7 +122,8 @@ final class LocalAppModel: ObservableObject {
             guard ticket == generation else { return }
             if !queriedDay.contains(clock()) { await activate(); return }
             // Preserve same-day last readable value and label it as old, never fabricate zero.
-            readingError = "读取步数失败，请重试。上次结果仅供本机参考。"
+            readingError = HealthFailureMessage.detail(for: error, requesting: false)
+            healthDiagnostic = HealthFailureMessage.diagnostic(for: error)
             phase = .failed
         }
     }
@@ -135,6 +141,7 @@ final class LocalAppModel: ObservableObject {
         snapshot = nil
         snapshotIsStale = false
         readingError = nil
+        healthDiagnostic = nil
         phase = reader.isAvailable ? .needsRequest : .unavailable
         return true
     }
