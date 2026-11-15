@@ -1,0 +1,105 @@
+Report repair: backend_identity + ios_local; requirement version 8.
+Read-only source/evidence verification; no test suite rerun.
+$ git rev-parse HEAD
+664ff47bf0d43c516353e5832b7be3f14d5248de
+exit_status=0
+$ git diff --exit-code 7b940eb9fbb839396a1437351e0abff1df257608 -- backend scripts README.md REQUIREMENTS.md docs/API.md docs/DATA_ACCESS.md
+exit_status=0
+$ sha256sum -c docs/validation/pool-timing-sources.sha256
+backend/Cargo.toml: 成功
+backend/Cargo.lock: 成功
+backend/development.env.example: 成功
+backend/src/auth.rs: 成功
+backend/src/bin/test_server.rs: 成功
+backend/src/domain.rs: 成功
+backend/src/http.rs: 成功
+backend/src/lib.rs: 成功
+backend/src/mail.rs: 成功
+backend/src/main.rs: 成功
+backend/src/pool.rs: 成功
+backend/src/storage.rs: 成功
+backend/src/tls.rs: 成功
+backend/migrations/001_initial.sql: 成功
+backend/migrations/002_email_auth.sql: 成功
+backend/migrations/003_data_access.sql: 成功
+backend/tests/pg_fixture.py: 成功
+backend/tests/test_circles.py: 成功
+backend/tests/test_data_access.py: 成功
+backend/tests/test_email_auth.py: 成功
+backend/tests/test_https.py: 成功
+backend/tests/test_identity.py: 成功
+backend/tests/test_launcher.py: 成功
+backend/tests/test_migration.py: 成功
+backend/tests/test_social.py: 成功
+scripts/benchmark_data_access.py: 成功
+scripts/postgres_dev.py: 成功
+scripts/import_sqlite.py: 成功
+scripts/run_backend.sh: 成功
+README.md: 成功
+docs/API.md: 成功
+docs/DATA_ACCESS.md: 成功
+exit_status=0
+$ sha256sum -c docs/validation/ios-local-revalidation-sources.sha256
+ios/Config/Base.xcconfig: 成功
+ios/Config/Debug.xcconfig: 成功
+ios/Config/Release.xcconfig: 成功
+ios/Config/Service.example.xcconfig: 成功
+ios/StairClimb/App/LocalAppModel.swift: 成功
+ios/StairClimb/App/StairClimbApp.swift: 成功
+ios/StairClimb/Assets.xcassets/AppIcon.appiconset/AppIcon.png: 成功
+ios/StairClimb/Assets.xcassets/AppIcon.appiconset/Contents.json: 成功
+ios/StairClimb/Assets.xcassets/Contents.json: 成功
+ios/StairClimb/Core/CircleChannel.swift: 成功
+ios/StairClimb/Core/NicknameRules.swift: 成功
+ios/StairClimb/Core/ShanghaiDay.swift: 成功
+ios/StairClimb/Core/StepRules.swift: 成功
+ios/StairClimb/Health/HealthStepReader.swift: 成功
+ios/StairClimb/Identity/IdentityVault.swift: 成功
+ios/StairClimb/Identity/KeychainStore.swift: 成功
+ios/StairClimb/Info-Debug.plist: 成功
+ios/StairClimb/Info-Release.plist: 成功
+ios/StairClimb/Network/APIClient.swift: 成功
+ios/StairClimb/Network/EmailAuth.swift: 成功
+ios/StairClimb/Network/NetworkVault.swift: 成功
+ios/StairClimb/Network/ServiceAddress.swift: 成功
+ios/StairClimb/Network/SocialModel.swift: 成功
+ios/StairClimb/StairClimb.entitlements: 成功
+ios/StairClimb/Views/CircleView.swift: 成功
+ios/StairClimb/Views/EmailAccountView.swift: 成功
+ios/StairClimb/Views/ProgressViewScreen.swift: 成功
+ios/StairClimb/Views/SocialView.swift: 成功
+ios/StairClimb.xcodeproj/project.pbxproj: 成功
+ios/StairClimb.xcodeproj/xcshareddata/xcschemes/StairClimb.xcscheme: 成功
+ios/StairClimbTests/CircleTests.swift: 成功
+ios/StairClimbTests/EmailAuthTests.swift: 成功
+ios/StairClimbTests/IdentityVaultTests.swift: 成功
+ios/StairClimbTests/LocalAppModelTests.swift: 成功
+ios/StairClimbTests/NetworkTests.swift: 成功
+ios/StairClimbTests/ShanghaiDayTests.swift: 成功
+ios/StairClimbTests/StepRulesTests.swift: 成功
+scripts/check_ios_project.py: 成功
+scripts/tests/test_ios_project.py: 成功
+backend/domain.py: 成功
+backend/src/domain.rs: 成功
+README.md: 成功
+exit_status=0
+$ git diff --check
+exit_status=0
+Historical Watcher receipt: /home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/acceptance-results.json
+round=24 tree=c05be07fe1278f8edd4e338e1677ce29643ce65fc921d63fc4ef2ba7a618e21d complete=true source_changed=false
+historical_command=python3 -m unittest discover -s backend/tests -p 'test_*.py' -v
+exit_status=0
+log=/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/024-check-01.log
+sha256=0bbd6dd8b032fb803c98f9cefc842bd71c3e405096ef5c97006940b75895ccd7 MATCH
+historical_command=cargo test --locked --manifest-path backend/Cargo.toml --all-targets
+exit_status=0
+log=/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/024-check-02.log
+sha256=fafd52b0cf54dde630d9aa10f940cca3789e054e6bd0064aa0111715b65a974a MATCH
+historical_command=cargo fmt --manifest-path backend/Cargo.toml --all -- --check
+exit_status=0
+log=/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/024-check-03.log
+sha256=95a69fb52d8144d610c31d84008b1d017014e4ca22b1cb5d2c68e34cc2bcf1c1 MATCH
+Saved focused check: docs/validation/ios-local-revalidation-focused.txt; exit_status=0.
+Saved regression: docs/validation/ios-local-revalidation-regression.txt; 34 tests, exit_status=0.
+Limits: no new backend/Swift execution; Apple compilation, XCTest, signing, HealthKit, system trust and visual validation remain unexecuted.
+verification_exit_status=0

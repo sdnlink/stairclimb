@@ -1,0 +1,42 @@
+source HEAD: 664ff47bf0d43c516353e5832b7be3f14d5248de
+$ python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+test_anonymous_registration_path_is_rejected (test_ios_project.IOSProjectChecks.test_anonymous_registration_path_is_rejected) ... ok
+test_credential_redirects_cannot_be_enabled (test_ios_project.IOSProjectChecks.test_credential_redirects_cannot_be_enabled) ... ok
+test_custom_certificate_trust_bypass_rejected (test_ios_project.IOSProjectChecks.test_custom_certificate_trust_bypass_rejected) ... ok
+test_debug_arbitrary_loads_are_still_rejected (test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_exception_cannot_enter_release (test_ios_project.IOSProjectChecks.test_debug_legacy_exception_cannot_enter_release) ... ok
+test_debug_local_http_and_all_exception_ranges_rejected (test_ios_project.IOSProjectChecks.test_debug_local_http_and_all_exception_ranges_rejected) ... ok
+test_debug_local_key_alone_rejected (test_ios_project.IOSProjectChecks.test_debug_local_key_alone_rejected) ... ok
+test_direct_client_bypass_rejected (test_ios_project.IOSProjectChecks.test_direct_client_bypass_rejected) ... ok
+test_disabled_capability (test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_http_address_bypass_rejected (test_ios_project.IOSProjectChecks.test_http_address_bypass_rejected) ... ok
+test_missing_circle_midnight_test_is_rejected (test_ios_project.IOSProjectChecks.test_missing_circle_midnight_test_is_rejected) ... ok
+test_missing_circle_privacy_action_is_rejected (test_ios_project.IOSProjectChecks.test_missing_circle_privacy_action_is_rejected) ... ok
+test_missing_entitlement (test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_icon (test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_openstep_duplicate_key_rejected (test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_persisting_password_is_rejected (test_ios_project.IOSProjectChecks.test_persisting_password_is_rejected) ... ok
+test_release_ats_bypass (test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_local_exception_is_also_rejected (test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_secrets_surviving_background_is_rejected (test_ios_project.IOSProjectChecks.test_secrets_surviving_background_is_rejected) ... ok
+test_test_target_has_no_app_dependency (test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_tls_minimum_cannot_be_lowered (test_ios_project.IOSProjectChecks.test_tls_minimum_cannot_be_lowered) ... ok
+test_unlinked_email_tests_are_rejected (test_ios_project.IOSProjectChecks.test_unlinked_email_tests_are_rejected) ... ok
+test_unlinked_source (test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_unwired_circle_pagination_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_circle_pagination_is_rejected) ... ok
+test_unwired_circle_tab_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_circle_tab_is_rejected) ... ok
+test_unwired_email_form_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_email_form_is_rejected) ... ok
+test_valid_project (test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 0.426s
+
+OK
+exit_status=0

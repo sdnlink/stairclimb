@@ -1,0 +1,10 @@
+source HEAD: 664ff47bf0d43c516353e5832b7be3f14d5248de
+working change: local identity recovery copy only
+$ python3 scripts/check_ios_project.py
+PASS project reference graph: 97 objects; 18 app + 7 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, foreground/midnight and XCTest wiring
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+exit_status=0
