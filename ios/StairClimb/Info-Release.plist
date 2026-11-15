@@ -33,9 +33,7 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-	<key>NSHealthShareUsageDescription</key>
-	<string>爬楼梯仅读取上海当日步数汇总，以每100步兑换1个虚拟楼层；本机查看不需要公开共享。</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>爬楼梯不向Apple健康写入、修改或删除任何健康数据。</string>
+	<key>NSMotionUsageDescription</key>
+	<string>爬楼梯使用本机运动与健身计步，读取上海当日累计步数，以每100步换算1个虚拟楼层；仅在你主动同意共享后上传当日汇总，不读取Apple健康或位置。</string>
 </dict>
 </plist>

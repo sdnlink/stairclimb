@@ -18,9 +18,9 @@ final class StepRulesTests: XCTestCase {
     }
 
     func testHealthQuantitiesAreFiniteAndNotSilentlyClamped() throws {
-        XCTAssertEqual(try StepRules.healthProgress(total: 101.9).steps, 101)
+        XCTAssertEqual(try StepRules.sensorProgress(total: 101.9).steps, 101)
         for value in [-0.1, Double.nan, Double.infinity, -Double.infinity, 1_000_000.1] {
-            XCTAssertThrowsError(try StepRules.healthProgress(total: value))
+            XCTAssertThrowsError(try StepRules.sensorProgress(total: value))
         }
     }
 

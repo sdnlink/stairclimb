@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 struct StairClimbApp: App {
     @StateObject private var model = LocalAppModel(
-        reader: HealthStepReader(), vault: IdentityVault(store: KeychainStore()))
+        reader: MotionStepReader(), vault: IdentityVault(store: KeychainStore()))
     @StateObject private var social = SocialModel(
         vault: NetworkVault(store: KeychainStore(service: "cn.stairclimb.network-identity", account: "server")))
 

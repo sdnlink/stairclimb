@@ -13,11 +13,11 @@ enum StepRules {
         return StepProgress(steps: steps)
     }
 
-    static func healthProgress(total: Double) throws -> StepProgress {
+    static func sensorProgress(total: Double) throws -> StepProgress {
         guard total.isFinite, total >= 0, total <= Double(maximumSteps) else {
             throw ValidationError.outOfRange
         }
-        // HealthKit quantities are Double. Publish whole cumulative steps, never round up.
+        // Sensor quantities are Double. Publish whole cumulative steps, never round up.
         return try progress(steps: Int(total.rounded(.down)))
     }
 }

@@ -198,12 +198,12 @@ private final class MockSocialAPI: APIRequesting {
 }
 
 @MainActor
-private final class NetworkHealthReader: HealthStepReading {
+private final class NetworkStepReader: StepReadingProviding {
     var isAvailable = true
-    var reading: HealthReading = .total(101)
+    var reading: StepReading = .total(101)
     var error: Error?
     func requestAccess() async throws {}
-    func readSteps(in day: ShanghaiDay) async throws -> HealthReading {
+    func readSteps(in day: ShanghaiDay) async throws -> StepReading {
         if let error { throw error }
         return reading
     }
@@ -217,18 +217,18 @@ final class SocialModelTests: XCTestCase {
     private var suite: String!
     private var model: SocialModel!
     private var local: LocalAppModel!
-    private var health: NetworkHealthReader!
+    private var health: NetworkStepReader!
     private var now = NetworkTestData.now
 
     override func setUp() async throws {
         suite = "cn.stairclimb.networktests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
-        api = MockSocialAPI(); store = MemorySecureStore(); health = NetworkHealthReader()
+        api = MockSocialAPI(); store = MemorySecureStore(); health = NetworkStepReader()
         let user = ServerUser(id: "mock-user", nickname: "小楼", sharingEnabled: true, consentRevision: 1)
         try NetworkVault(store: store).save(SavedNetworkState(identity: NetworkIdentity(baseURL: "https://example.invalid", token: NetworkTestData.token, user: user, refreshToken: String(repeating: "r", count: 43), accessExpiresAt: NetworkTestData.now.addingTimeInterval(900)), uploadAllowed: true))
         model = makeModel()
         local = LocalAppModel(reader: health, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults, clock: { self.now })
-        await local.requestHealthAccess()
+        await local.requestMotionAccess()
         await model.refresh()
         api.calls.removeAll()
     }

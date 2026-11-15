@@ -17,7 +17,7 @@ struct CircleView: View {
             List {
                 Section("每日自动匹配") {
                     Text("上海 Asia/Shanghai 每天00:00重新匹配，每\(StepRules.circleBandSteps)步一组：0–999、1000–1999等。同组就是同一天的同一频道；跨区间同步后自动迁圈。")
-                    Text("只显示真实成员，小圈不凑人数。历史健康数据不清除；不公开真实地理位置。交流功能暂未开放。")
+                    Text("只显示真实成员，小圈不凑人数。历史运动数据不清除；不公开真实地理位置。交流功能暂未开放。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !model.storageReady {
@@ -37,7 +37,7 @@ struct CircleView: View {
                     }
                 } else if model.state.identity == nil || !model.authenticated {
                     Section("验证邮箱后查看圈友") {
-                        Text("请先注册、验证邮箱并登录；登录不等于健康共享或参加圈子。不参加仍可在“我的楼梯”查看本机运动。")
+                        Text("请先注册、验证邮箱并登录；登录不等于运动共享或参加圈子。不参加仍可在“我的楼梯”查看本机运动。")
                         Button(model.isLegacyIdentity ? "绑定旧身份邮箱" : "注册、验证或登录") { showAccount = true }
                             .disabled(model.busy)
                         if model.state.identity != nil {
@@ -104,7 +104,7 @@ struct CircleView: View {
                 Button("主动同意参加") { Task { await model.joinCircle(); await model.refreshCircle() } }
                 Button("暂不参加", role: .cancel) {}
             } message: {
-                Text("按每日1000步区间公开分组。昵称、当日汇总步数和虚拟楼层会对圈友可见；每天自动匹配，跨区间自动迁圈。允许本地运动而不参加；退出同时撤回健康汇总共享。")
+                Text("按每日1000步区间公开分组。昵称、当日汇总步数和虚拟楼层会对圈友可见；每天自动匹配，跨区间自动迁圈。允许本地运动而不参加；退出同时撤回运动汇总共享。")
             }
             .alert("退出圈子并撤回共享？", isPresented: $leaving) {
                 Button("确认退出", role: .destructive) { Task { await model.privacy(.revoke, confirmNewAttempt: true) } }

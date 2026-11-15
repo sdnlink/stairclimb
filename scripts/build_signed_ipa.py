@@ -77,13 +77,6 @@ def validate_profile(profile, team, mode, now=None):
     bundle = identifier[len(prefix):] if prefix else ''
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle):
         raise SigningFailure('Profile must contain an explicit App ID, not a wildcard')
-    if entitlements.get('com.apple.developer.healthkit') is not True:
-        raise SigningFailure(
-            'Profile is missing Entitlements.com.apple.developer.healthkit=true. '
-            'Enable HealthKit for the matching explicit App ID in Apple Developer, '
-            'regenerate/download a profile for this signing mode and registered devices, '
-            'then replace the selected GitHub provisioning-profile secret with its base64. '
-            'Changing the P12 or enabling HealthKit only in Xcode does not update an existing profile.')
     if profile.get('ProvisionsAllDevices'):
         raise SigningFailure('Enterprise profiles are not supported by these export modes')
     debug = entitlements.get('get-task-allow') is True
@@ -104,8 +97,8 @@ def validate_signed_entitlements(entitlements, profile, team, mode):
     """A capable profile alone is insufficient: validate the final app signature."""
     bundle, _ = validate_profile(profile, team, mode)
     expected_identifier = profile['Entitlements']['application-identifier']
-    if entitlements.get('com.apple.developer.healthkit') is not True:
-        raise SigningFailure('Exported IPA signature is missing the HealthKit entitlement')
+    if any(key.startswith('com.apple.developer.healthkit') for key in entitlements):
+        raise SigningFailure('Core Motion build must not include HealthKit entitlements')
     if entitlements.get('application-identifier') != expected_identifier:
         raise SigningFailure('Exported IPA signature App ID does not match its provisioning profile')
     if entitlements.get('com.apple.developer.team-identifier') != team:
@@ -242,7 +235,7 @@ def build(mode, output):
                 exported_info = plistlib.load(stream)
             if exported_info.get('CFBundleIdentifier') != bundle:
                 raise SigningFailure('Exported IPA Info.plist does not match its signing identity')
-            receipt.update(healthkit_entitlement_verified=True, exported_signature_verified=True)
+            receipt.update(step_source="core-motion", no_healthkit_entitlement_verified=True, exported_signature_verified=True)
             target = output/('StairClimb-'+mode+'.ipa')
             shutil.copyfile(ipas[0],target)
             digest=hashlib.sha256(target.read_bytes()).hexdigest()

@@ -265,7 +265,7 @@ final class SocialModel: ObservableObject {
                 authenticated = true
                 accountEmail = nil
                 clearBoard(); clearSync()
-                authMessage = "已登录，昵称用于公开展示。健康共享和圈子参与须单独主动同意。"
+                authMessage = "已登录，昵称用于公开展示。运动共享和圈子参与须单独主动同意。"
             } else if action.sendsMail {
                 guard response.message != nil else { throw NetworkFailure.response }
                 authMessage = "若请求适用于账号，邮件已提交给邮件服务器；请实际查看邮箱。尚未验证成功，也不保证已收件。"
@@ -402,7 +402,7 @@ final class SocialModel: ObservableObject {
             try persist()
             defaults.set(false, forKey: Self.uploadStopKey)
             clearBoard()
-            message = "已同意公开。点击读取并同步后才上传当日健康汇总。圈子仍需单独主动同意。"
+            message = "已同意公开。点击读取并同步后才上传当日运动汇总。圈子仍需单独主动同意。"
         } catch { handle(error) }
     }
 

@@ -123,12 +123,12 @@ private final class CircleAPI: APIRequesting {
 }
 
 @MainActor
-private final class CircleHealthReader: HealthStepReading {
+private final class CircleStepReader: StepReadingProviding {
     var isAvailable = true
     var steps = 1000.0
     var queriedDays: [String] = []
     func requestAccess() async throws {}
-    func readSteps(in day: ShanghaiDay) async throws -> HealthReading {
+    func readSteps(in day: ShanghaiDay) async throws -> StepReading {
         queriedDays.append(day.date)
         return .total(steps)
     }
@@ -339,8 +339,8 @@ final class CircleStateTests: XCTestCase {
         release(); await oldRead.value
         XCTAssertNil(model.circle)
         XCTAssertNil(model.circleUpdatedAt)
-        let reader = CircleHealthReader(); reader.steps = 0
-        defaults.set(true, forKey: "healthAccessRequestAttempted")
+        let reader = CircleStepReader(); reader.steps = 0
+        defaults.set(true, forKey: "motionAccessRequestAttempted")
         let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
                                   clock: { self.api.now })
         await model.foreground(local: local)
@@ -354,8 +354,8 @@ final class CircleStateTests: XCTestCase {
     func testSyncHidesOldCircleBeforeSendingCrossBandSnapshot() async {
         await joined()
         let successfulRefresh = model.circleUpdatedAt
-        let reader = CircleHealthReader()
-        defaults.set(true, forKey: "healthAccessRequestAttempted")
+        let reader = CircleStepReader()
+        defaults.set(true, forKey: "motionAccessRequestAttempted")
         let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
                                   clock: { self.api.now })
         api.holdPath = "/v1/me/steps"
@@ -407,8 +407,8 @@ final class CircleStateTests: XCTestCase {
 
     func testLostUploadResponseKeepsPreviousSyncTimeWithoutClaimingMigrationSuccess() async {
         await joined()
-        let reader = CircleHealthReader(); reader.steps = 999
-        defaults.set(true, forKey: "healthAccessRequestAttempted")
+        let reader = CircleStepReader(); reader.steps = 999
+        defaults.set(true, forKey: "motionAccessRequestAttempted")
         let local = LocalAppModel(reader: reader, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults,
                                   clock: { self.api.now })
         await model.sync(local: local); await model.refreshCircle()

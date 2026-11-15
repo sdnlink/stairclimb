@@ -36,7 +36,7 @@ class IOSProjectChecks(unittest.TestCase):
         self.assertEqual(len(check_project(self.root)), 6)
 
     def test_missing_source(self):
-        (self.root/'ios/StairClimb/Health/HealthStepReader.swift').unlink()
+        (self.root/'ios/StairClimb/Motion/MotionStepReader.swift').unlink()
         self.rejects('Missing referenced file')
 
     def test_unlinked_source(self):
@@ -57,10 +57,10 @@ class IOSProjectChecks(unittest.TestCase):
         self.replace(path, 'BlueprintIdentifier="', 'BlueprintIdentifier="BROKEN')
         self.rejects('Dangling project reference')
 
-    def test_missing_entitlement(self):
+    def test_healthkit_entitlement_cannot_reappear(self):
         path = self.root/'ios/StairClimb/StairClimb.entitlements'
         path.write_bytes(plistlib.dumps({'com.apple.developer.healthkit': False}))
-        self.rejects('Missing HealthKit entitlement')
+        self.rejects('Core Motion build must not request HealthKit entitlement')
 
     def test_release_ats_bypass(self):
         path = self.root/'ios/StairClimb/Info-Release.plist'
@@ -138,9 +138,22 @@ class IOSProjectChecks(unittest.TestCase):
         self.replace(path, 'Info-Debug.plist', 'Info-Release.plist')
         self.rejects('Debug Info.plist misassociated')
 
-    def test_disabled_capability(self):
-        self.replace(self.project, 'enabled = 1', 'enabled = 0')
-        self.rejects('HealthKit capability not enabled')
+    def test_healthkit_capability_cannot_reappear(self):
+        self.replace(self.project, 'SystemCapabilities = {  }', 'SystemCapabilities = { com.apple.HealthKit = { enabled = 1; }; }')
+        self.rejects('Core Motion build must not enable HealthKit capability')
+
+    def test_motion_privacy_string_is_required_in_both_builds(self):
+        for mode in ['Debug', 'Release']:
+            path = self.root/f'ios/StairClimb/Info-{mode}.plist'
+            original = path.read_bytes()
+            data = plistlib.loads(original); data.pop('NSMotionUsageDescription')
+            path.write_bytes(plistlib.dumps(data))
+            self.rejects('Missing Chinese NSMotionUsageDescription')
+            path.write_bytes(original)
+
+    def test_coremotion_framework_is_required(self):
+        self.replace(self.project, 'System/Library/Frameworks/CoreMotion.framework', 'System/Library/Frameworks/Other.framework')
+        self.rejects('Missing CoreMotion link')
 
     def test_test_target_has_no_app_dependency(self):
         parsed = openstep(self.project.read_text())

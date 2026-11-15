@@ -1,8 +1,10 @@
 # 爬楼梯
 
+**当前计步来源已切换为 Core Motion 本机计步**：无需 Apple 健康或 HealthKit 描述文件，需授权“运动与健身”。前台每15秒刷新，返回前台补查上海当日累计；Development IPA仍需正常签名及包含目标iPhone的描述文件。实现与验收见[本机计步](docs/MOTION_COUNTING.md)。本次迁移尚待Mac构建和真机验证，历史验收日志只证明对应旧版本。
+
 原生 SwiftUI iOS 应用 + Rust HTTP/PostgreSQL 后端的 MVP。所有楼层都是每 100 步兑换的虚拟游戏楼层，日界线统一为 **Asia/Shanghai**，不采集真实地理位置。
 
-当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。需求版本8的全部16个模块已获独立评审接受，源码与Linux可运行部分已完成，现提交整体验收。第35轮Watcher固定检查为124项Python、18项Rust及格式检查通过；Apple平台验证仍未执行。
+当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含Core Motion 本机计步楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。需求版本8的全部16个模块已获独立评审接受，源码与Linux可运行部分已完成，现提交整体验收。第35轮Watcher固定检查为124项Python、18项Rust及格式检查通过；Apple平台验证仍未执行。
 
 邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通。[完整Xcode工程](ios/StairClimb.xcodeproj)、[Mac自动构建/XCTest入口及真机清单](docs/APPLE_VALIDATION.md)和[当前运行交接](docs/DELIVERY.md)均已交付；本次源码与Linux交付不表示Apple构建、签名或真机验收通过。
 
@@ -89,7 +91,7 @@ python3 -m unittest backend.tests.test_social -v
 
 “运动圈子”标签打开中文“今日运动圈子”页面，展示上海日期、频道、1000步区间、真实人数、昵称、步数、虚拟楼层及本人标记，可加载全部圈友、定位本人、刷新。未登录可直接进入邮箱表单；先在榜单主动共享，再在圈子单独确认参与。小圈直接显示真实成员，不混入其他区间；未参加、加载、错误及退出待确认均有明确状态。圈友请求失败清除旧成员并提示重试；分页版本变化要求从头刷新。同步发送前隐藏旧圈友，避免可能迁圈或丢失上传响应后仍展示旧频道。退出同时撤回共享，待确认时停传且不会自动参加；删除入口仍在榜单的隐私操作中。
 
-本机进度展示上次成功读取时间；榜单及圈子展示上次成功刷新时间，均为上海时间。返回前台、重新读取/刷新期间和失败后，已有值明确标为缓存；失败不更新成功时间。圈友读取失败仍隐藏旧成员，仅保留本次运行内的上次成功刷新时间及过期提示。同步显示服务器已确认的上次累计值和成功时间；后续尝试失败不会把该记录改成新成功。上传已确认但随后榜单读取失败时，保留独立的同步成功记录，榜单提示未刷新；上传响应丢失则只显示上次记录，允许刷新确认当前频道。时间及健康缓存不持久化，重启后须重新查询。
+本机进度展示上次成功读取时间；榜单及圈子展示上次成功刷新时间，均为上海时间。返回前台、重新读取/刷新期间和失败后，已有值明确标为缓存；失败不更新成功时间。圈友读取失败仍隐藏旧成员，仅保留本次运行内的上次成功刷新时间及过期提示。同步显示服务器已确认的上次累计值和成功时间；后续尝试失败不会把该记录改成新成功。上传已确认但随后榜单读取失败时，保留独立的同步成功记录，榜单提示未刷新；上传响应丢失则只显示上次记录，允许刷新确认当前频道。时间及计步缓存不持久化，重启后须重新查询。
 
 跨1000步区间的成功同步和服务器返回的区间变化会说明自动迁圈原因；上传前隐藏旧圈友，不把尚未确认的迁圈显示为成功。上海午夜清除昨日成功记录和成员，包括先前离线已清空频道的情况；前台、刷新和定时检查共用同一日期屏障。撤回、退出、删除、认证失效及更换身份会清除对应可见记录，隐私操作离线待完成时也不会继续显示旧圈友或同步成功。昵称公开、邮箱仅本人账号设置可见及独立主动同意的规则保持不变。
 
@@ -111,7 +113,7 @@ xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration D
 
 在 Mac 使用 **Xcode 16+、iOS 17+** 打开 [StairClimb.xcodeproj](ios/StairClimb.xcodeproj)。共享 scheme 为 `StairClimb`，应用 target 为 `StairClimb`，已关联 `StairClimbTests` XCTest target。Swift 源码、资源、配置与 scheme 均直接交付，无需先安装工程生成工具。
 
-主界面为中文可视化楼梯，突出“我”的虚拟楼层，显示今日步数、楼层、距下一层步数以及上海日期/读取时间。无首次读取结果时显示“—”，无可读数据时明确说明可能无记录或没有读取权限；HealthKit 不向 App 透露拒绝读取的可靠状态。查询错误保留并标注同日上次结果，不冒充成功零值。回前台和下拉重新读取；前台上海午夜清空旧日展示并重新查询，异步旧日结果不能覆盖新日。HealthKit 只请求读取 `.stepCount`，按上海00:00至次日00:00查询汇总，无写入或删除健康数据，无演示数据。
+主界面为中文可视化楼梯，展示此iPhone的上海当日累计步数、虚拟楼层、距下一层步数及读取时间。使用Core Motion `CMPedometer`，首次需主动开启“运动与健身”；不读取或写入Apple健康。前台每15秒、下拉及返回前台重新查询上海00:00至当前时间的累计值，不重复相加；午夜清空旧展示，旧日异步响应不能写入今天。拒绝、限制、失败及无数据都有明确提示，错误不冒充真实0步，也不上传缓存。详见[本机计步](docs/MOTION_COUNTING.md)。
 
 点击右上角创建/修改本机昵称。本机 UUID 和昵称完整保存在 Keychain（`WhenUnlockedThisDeviceOnly`，不作云同步），安全存储失败不自动生成替代身份。**本机 UUID 不是后端账号或认证凭证**；现有“今日楼层榜”使用独立Keychain联网凭证；邮箱注册与登录入口不再调用匿名API，正式服务不接受新匿名注册。本机查看无需共享同意，也不需要联网注册。本机昵称身份没有找回机制；联网邮箱账号可登录或重置密码。旧匿名身份绑定前丢失凭证无法保证找回，重装后的 Keychain 保留也不能保证。
 
@@ -122,7 +124,7 @@ python3 scripts/check_ios_project.py
 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
 ```
 
-检查解析真实 PBX 对象图、源文件和测试 target 关联、共享 scheme、配置包含关系、HealthKit capability/entitlements、中文隐私说明、图标及 Debug/Release ATS；还核对 Rust 权威规则、历史Python规则参考和Swift的换算、上限及1000步参数一致。检查器自身的隔离回归会破坏工程引用、scheme、entitlement、ATS等输入，验证确实拒绝错误配置。这些都是静态结构检查，**不等于 Swift 编译或 XCTest 已运行**。本轮日志和源码指纹见 [ios_local 验证记录](docs/verification-04.md)。
+检查解析真实 PBX 对象图、源文件和测试 target 关联、共享 scheme、配置包含关系、CoreMotion framework、运动权限用途说明和无HealthKit要求、中文隐私说明、图标及 Debug/Release ATS；还核对 Rust 权威规则、历史Python规则参考和Swift的换算、上限及1000步参数一致。检查器自身的隔离回归会破坏工程引用、scheme、entitlement、ATS等输入，验证确实拒绝错误配置。这些都是静态结构检查，**不等于 Swift 编译或 XCTest 已运行**。本轮日志和源码指纹见 [ios_local 验证记录](docs/verification-04.md)。
 
 Mac统一入口自动选取已安装的iOS17+ iPhone模拟器，运行Debug/Release构建和全部XCTest，保留原始日志、退出码、源码指纹及结果包；任何构建失败、零测试、失败/跳过测试都不会报告通过：
 
@@ -130,28 +132,28 @@ Mac统一入口自动选取已安装的iOS17+ iPhone模拟器，运行Debug/Rele
 python3 scripts/validate_apple.py
 ```
 
-可用`--device-id <UDID>`指定已有模拟器，`--output <新目录>`保存输出；默认在忽略的`.runtime/apple-validation/`下。已提供[macOS workflow](.github/workflows/apple.yml)，与本地使用同一入口，尚未触发远程CI。环境准备、收据说明及真机HealthKit/证书/断网/跨日/迁圈验收步骤见[Apple验证说明](docs/APPLE_VALIDATION.md)。该入口的Linux编排测试使用替身工具，不是Swift或XCTest执行。
+可用`--device-id <UDID>`指定已有模拟器，`--output <新目录>`保存输出；默认在忽略的`.runtime/apple-validation/`下。已提供[macOS workflow](.github/workflows/apple.yml)，与本地使用同一入口，旧版已有远程CI记录，本次Core Motion迁移需在新提交运行。环境准备、收据说明及真机Core Motion/证书/断网/跨日/迁圈验收步骤见[Apple验证说明](docs/APPLE_VALIDATION.md)。该入口的Linux编排测试使用替身工具，不是Swift或XCTest执行。
 
 等效底层命令（仓库根目录执行；先用 `xcrun simctl list devices available` 确认已安装的 iPhone 模拟器，按实际名称替换测试 destination）：
 
 ```sh
-xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO test
+xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- AD_HOC_CODE_SIGNING_ALLOWED=YES build
+xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Release -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- AD_HOC_CODE_SIGNING_ALLOWED=YES build
+xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- AD_HOC_CODE_SIGNING_ALLOWED=YES test
 ```
 
-Swift 测试覆盖0/99/100/101/最大值、剩余步数、非法汇总、上海午夜/年月/闰日、不同设备日区、昵称、Keychain持久读写、首次请求/无数据/错误、前台更新、并发读取及午夜旧响应隔离。模拟器测试通过也不能证明真机 HealthKit 可读。真机需在 Signing & Capabilities 选择自己的 Team 和唯一 Bundle ID，确认 HealthKit 权限并在 iPhone 中实际授权、走路、拒绝读取、返回前台验证；不需要本项目代注册或购买开发者服务。
+Swift 测试覆盖0/99/100/101/最大值、剩余步数、非法汇总、上海午夜/年月/闰日、不同设备日区、昵称、Keychain持久读写、首次请求/无数据/错误、前台更新、并发读取及午夜旧响应隔离。模拟器测试通过也不能证明真机 Core Motion 计步可读。真机需在 Signing & Capabilities 选择自己的 Team 和唯一 Bundle ID，在 iPhone 中实际授权运动与健身并、走路、拒绝读取、返回前台验证；不需要本项目代注册或购买开发者服务。
 
 ## iOS 联网与隐私
 
-“今日楼层榜”→“注册、验证或登录”打开中文邮箱账号表单。选择“邮箱注册”填写邮箱、密码和公开昵称，实际查看邮件后选择“验证邮箱”，输入邮件内43位凭据和注册密码；仅服务器确认`completed:true`才显示验证完成，然后另行登录。提供重发、忘记密码和重置入口；SMTP未配置/失败、凭据过期/已用、限流和认证失败均显示错误，不冒称已投递或已验证。所有连接强制HTTPS和系统证书信任；本机HealthKit继续独立可用。登录不自动开启健康共享或圈子参与，上传仍需单独主动同意。完整[邮箱与本地捕获步骤](docs/EMAIL_AUTH.md)。
+“今日楼层榜”→“注册、验证或登录”打开中文邮箱账号表单。选择“邮箱注册”填写邮箱、密码和公开昵称，实际查看邮件后选择“验证邮箱”，输入邮件内43位凭据和注册密码；仅服务器确认`completed:true`才显示验证完成，然后另行登录。提供重发、忘记密码和重置入口；SMTP未配置/失败、凭据过期/已用、限流和认证失败均显示错误，不冒称已投递或已验证。所有连接强制HTTPS和系统证书信任；本机Core Motion计步继续独立可用。登录不自动开启运动共享或圈子参与，上传仍需单独主动同意。完整[邮箱与本地捕获步骤](docs/EMAIL_AUTH.md)。
 
 
-“读取今日步数并同步”先刷新共享版本，再读取HealthKit，仅在本次成功读取的上海日期与服务器一致时上传 `date/steps/expected_revision`，不上传原始样本。无可读数据状态的临时0值及失败保留的旧值不上传；真实读取到0则可以上传。成功同意后，回前台与上海午夜会尝试重新读取并同步；没有后台准点任务依赖。超时不重放旧快照，手动重试会重新读取。榜单支持刷新、逐页加载到底和跳到本人所在页；版本变化清除旧页，失败保留的同日结果标明缓存及上海读取时间，旧日榜单立即清除。
+“读取今日步数并同步”先刷新共享版本，再读取本机累计步数，仅在本次成功读取的上海日期与服务器一致时上传 `date/steps/expected_revision`，不上传原始样本。无可读数据状态的临时0值及失败保留的旧值不上传；真实读取到0则可以上传。成功同意后，回前台与上海午夜会尝试重新读取并同步；没有后台准点任务依赖。超时不重放旧快照，手动重试会重新读取。榜单支持刷新、逐页加载到底和跳到本人所在页；版本变化清除旧页，失败保留的同日结果标明缓存及上海读取时间，旧日榜单立即清除。
 
 撤回、删除全部共享步数和删除账号均有实际入口。确认操作时先停止本机上传并保存待完成意图，等待在途操作结束后提交。服务器成功响应前不会显示完成。待完成操作及其删除版本在Keychain保留；删除超时后如版本已变，必须再次主动确认“删除现存数据”，不会自动采用新版本重放。账号删除后收到401也只显示未确认，不冒称删除成功。重新共享始终要主动确认；刷新、重启和回前台不会重放开启共享或圈子参与。
 
-凭证与服务地址绑定，修改服务前先处理旧账号及数据。“仅移除此机联网凭证”明确不删除或撤回服务器数据，而且没有找回能力；待完成隐私操作时禁止此操作。服务器凭证、资料和隐私意图仅存Keychain，不放入URL、配置或日志；UserDefaults仅保存健康请求流程标记和一个非敏感的“本机停止上传”保险标志。后者在Keychain写失败后也阻止重启自动上传；解锁并重新主动同意后才清除。服务拒绝或认证失效会停传，不自动注册新账号。登录成功而Keychain暂时失败时保留内存中的新会话并允许重试安全保存，不重复登录。刷新在到期前30秒进行，串行轮换access/refresh；结果丢失或重启时发现刷新未确认，停止上传并要求重新登录，不重放旧刷新凭据。401仅对读取最多刷新重试一次，不重放步数或删除请求。
+凭证与服务地址绑定，修改服务前先处理旧账号及数据。“仅移除此机联网凭证”明确不删除或撤回服务器数据，而且没有找回能力；待完成隐私操作时禁止此操作。服务器凭证、资料和隐私意图仅存Keychain，不放入URL、配置或日志；UserDefaults仅保存运动请求流程标记和一个非敏感的“本机停止上传”保险标志。后者在Keychain写失败后也阻止重启自动上传；解锁并重新主动同意后才清除。服务拒绝或认证失效会停传，不自动注册新账号。登录成功而Keychain暂时失败时保留内存中的新会话并允许重试安全保存，不重复登录。刷新在到期前30秒进行，串行轮换access/refresh；结果丢失或重启时发现刷新未确认，停止上传并要求重新登录，不重放旧刷新凭据。401仅对读取最多刷新重试一次，不重放步数或删除请求。
 
 HTTPS/邮箱契约的Linux真实联通验证（自己创建并清理隔离PostgreSQL schema、临时Rust进程、TLS/SMTP端口及私有证书/捕获邮件，不接触开发身份，不打印凭证）：
 
@@ -165,7 +167,7 @@ python3 scripts/verify_ios_api.py
 
 已有匿名Keychain记录兼容保留，通过“绑定旧身份邮箱”发送验证邮件，验证/重置同时使用该设备原凭证。成功后登录原账号，保留原ID、昵称、历史和同意状态；本机停传状态不会被绑定或登录自动打开。若邮箱被他人未验证的旧绑定占用，可申请找回邮件，再主动选择“建立独立账号”；不合并或获取旧身份。切换到另一个账号前须处理原账号数据，再明确移除此机凭证。
 
-当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令、自动入口和workflow不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac入口已交付源码及Linux可运行检查，实际Apple平台验证仍待设备；该限制按原需求保留，不阻断完整源码与Linux后端交付。本地持续实例及最终交接见[交付说明](docs/DELIVERY.md)。
+当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 Core Motion 或视觉/辅助功能验证**。上述Mac命令、自动入口和workflow不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac入口已交付源码及Linux可运行检查，实际Apple平台验证仍待设备；该限制按原需求保留，不阻断完整源码与Linux后端交付。本地持续实例及最终交接见[交付说明](docs/DELIVERY.md)。
 
 监督流程由外部 Auto Moniter 执行，worker 不修改监督器源码、不提交或暂存 Git。全部模块的既有接受和固定检查结果由该流程记录；本次整体验收结论仍由独立 reviewer 和 Watcher确认。
 
@@ -185,4 +187,4 @@ python3 scripts/import_sqlite.py --sqlite /absolute/path/to/legacy.sqlite3 --sch
 最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL迁移当时的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹保留于[迁移验证](docs/verification-06-rust-postgres.md)。这些历史日志保持原样，当前完整集成及运行交接见[交付说明](docs/DELIVERY.md)。
 
 
-Apple健康连接失败时，先查看“我的楼梯 → 健康连接帮助”。无可读步数、设备锁定和访问请求失败现在分别提示，并显示安全错误编号；详见[健康连接排查](docs/HEALTH_CONNECTION.md)。
+本机计步失败时，查看“我的楼梯 → 计步帮助”和安全错误编号。旧Apple健康问题已通过迁移到Core Motion消除该依赖；详情见[本机计步说明](docs/MOTION_COUNTING.md)。

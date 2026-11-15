@@ -29,7 +29,7 @@ struct SocialView: View {
                     privacySection
                 } else {
                     Section("邮箱登录后查看真实榜单") {
-                        Text("邮箱＋密码＋昵称注册，实际验证邮箱后登录。注册不会默认公开健康数据；未登录仍可在“我的楼梯”查看本机运动。")
+                        Text("邮箱＋密码＋昵称注册，实际验证邮箱后登录。注册不会默认公开运动数据；未登录仍可在“我的楼梯”查看本机运动。")
                         Button("注册、验证或登录") { showAccount = true }
                             .disabled(model.busy || !model.storageReady)
                     }
@@ -59,13 +59,13 @@ struct SocialView: View {
             .alert(item: $confirmation) { choice in
                 switch choice {
                 case .share:
-                    Alert(title: Text("同意公开健康汇总？"), message: Text("昵称、当日汇总步数和虚拟楼层将对其他用户可见。仅上传累计总数，不上传原始健康样本或地理位置。重新共享会再次公开服务器保留的当日数据；圈子还需单独主动同意。拒绝仍可本机查看运动。"), primaryButton: .default(Text("主动同意共享")) { Task { await model.consentToShare() } }, secondaryButton: .cancel(Text("暂不共享")))
+                    Alert(title: Text("同意公开运动汇总？"), message: Text("昵称、当日汇总步数和虚拟楼层将对其他用户可见。仅上传累计总数，不上传原始运动样本或地理位置。重新共享会再次公开服务器保留的当日数据；圈子还需单独主动同意。拒绝仍可本机查看运动。"), primaryButton: .default(Text("主动同意共享")) { Task { await model.consentToShare() } }, secondaryButton: .cancel(Text("暂不共享")))
                 case .revoke:
                     privacyAlert(title: "撤回共享？", detail: "本机立即停止上传；服务器确认后移除公开榜单及圈子资格。历史已存值保留为私有。网络失败会显示待完成。", kind: .revoke)
                 case .deleteSteps:
-                    privacyAlert(title: "删除全部共享步数？", detail: "删除服务器全部日期的步数，关闭共享与圈子参与，保留账号。不删除Apple健康数据。若上次结果未知，本次确认表示重新删除服务器现存数据。", kind: .deleteSteps)
+                    privacyAlert(title: "删除全部共享步数？", detail: "删除服务器全部日期的步数，关闭共享与圈子参与，保留账号。不删除系统运动记录。若上次结果未知，本次确认表示重新删除服务器现存数据。", kind: .deleteSteps)
                 case .deleteAccount:
-                    privacyAlert(title: "永久删除联网账号？", detail: "删除服务器身份、邮箱、密码认证信息、会话、昵称、共享与圈子状态及全部步数，旧凭证失效。无法恢复，不影响本机Apple健康数据；网络失败不表示完成。", kind: .deleteAccount)
+                    privacyAlert(title: "永久删除联网账号？", detail: "删除服务器身份、邮箱、密码认证信息、会话、昵称、共享与圈子状态及全部步数，旧凭证失效。无法恢复，不影响本机系统运动记录；网络失败不表示完成。", kind: .deleteAccount)
                 case .forget:
                     Alert(title: Text("仅移除此机凭证？"), message: Text("这不删除或撤回服务器公开数据。已验证邮箱账号可重新登录或找回；旧匿名身份无法凭邮箱恢复，绑定前丢失凭证可能永久失去管理权。请优先使用删除账号。"), primaryButton: .destructive(Text("仅移除此机凭证")) { model.forgetLocalCredential() }, secondaryButton: .cancel())
                 }
@@ -89,7 +89,7 @@ struct SocialView: View {
     }
 
     private func sharingSection(_ identity: NetworkIdentity) -> some View {
-        Section("健康汇总共享") {
+        Section("运动汇总共享") {
             LabeledContent("服务器共享", value: identity.user.sharingEnabled ? "公开（刷新确认）" : "未公开（刷新确认）")
             LabeledContent("本机上传", value: model.canUpload ? "已允许" : "已停止")
             if !model.canUpload && model.state.privacy == nil {
@@ -106,7 +106,7 @@ struct SocialView: View {
                         .font(.caption).foregroundStyle(.orange)
                 }
             } else {
-                Text("尚无本次确认的今日同步结果。无可读健康数据或读取失败时不上传临时0值。")
+                Text("尚无本次确认的今日同步结果。无可读运动数据或读取失败时不上传临时0值。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Button("撤回共享并停止上传", role: .destructive) { confirmation = .revoke }

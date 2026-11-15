@@ -158,11 +158,11 @@ def check_project(root):
         require(proxy['remoteGlobalIDString'] == dep['target'] and proxy['containerPortal'] == project['rootObject'], 'Invalid test dependency proxy')
 
     capabilities = main['attributes']['TargetAttributes'][app_id]['SystemCapabilities']
-    require(capabilities['com.apple.HealthKit']['enabled'] == '1', 'HealthKit capability not enabled')
+    require('com.apple.HealthKit' not in capabilities, 'Core Motion build must not enable HealthKit capability')
     frameworks = [obj(obj(b, 'PBXBuildFile')['fileRef'])['path']
                   for phase in app['buildPhases'] if obj(phase)['isa'] == 'PBXFrameworksBuildPhase'
                   for b in obj(phase)['files']]
-    for name in ['HealthKit', 'Security']:
+    for name in ['CoreMotion', 'Security']:
         require(f'System/Library/Frameworks/{name}.framework' in frameworks, f'Missing {name} link')
 
     def configurations(target):
@@ -179,10 +179,11 @@ def check_project(root):
         require(settings.get('INFOPLIST_FILE') == f'StairClimb/Info-{mode}.plist', f'{mode} Info.plist misassociated')
         require(settings.get('CODE_SIGN_ENTITLEMENTS') == 'StairClimb/StairClimb.entitlements', 'Entitlement misassociated')
         entitlement = plistlib.loads((ios/settings['CODE_SIGN_ENTITLEMENTS']).read_bytes())
-        require(entitlement.get('com.apple.developer.healthkit') is True, 'Missing HealthKit entitlement')
+        require(not any(key.startswith('com.apple.developer.healthkit') for key in entitlement), 'Core Motion build must not request HealthKit entitlement')
         info = plistlib.loads((ios/settings['INFOPLIST_FILE']).read_bytes())
         require(info.get('CFBundleDisplayName') == '爬楼梯', 'Missing Chinese app name')
-        for key in ['NSHealthShareUsageDescription', 'NSHealthUpdateUsageDescription']:
+        require('NSHealthShareUsageDescription' not in info and 'NSHealthUpdateUsageDescription' not in info, 'Core Motion build must not request health permissions')
+        for key in ['NSMotionUsageDescription']:
             require(re.search('[\u4e00-\u9fff]', info.get(key, '')), f'Missing Chinese {key}')
         require(not any('Location' in key for key in info), 'Unrequested location capability')
         ats = info.get('NSAppTransportSecurity', {})
@@ -305,10 +306,10 @@ def check_project(root):
     require('chrono_tz::Asia::Shanghai' in rust, 'Missing Rust Shanghai timezone')
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
             'PASS shared scheme, XCTest host/dependency, source/resource membership, icon',
-            'PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission',
+            'PASS CoreMotion link, Motion & Fitness privacy string, no HealthKit capability/entitlements or location permission',
             'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, freshness display/cache lifecycle and XCTest wiring',
             'PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone',
-            'LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation']
+            'LIMIT: static structure only; no Swift compile, XCTest execution, signing, real motion sensor or visual validation']
 
 
 def main():

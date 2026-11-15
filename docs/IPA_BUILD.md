@@ -2,6 +2,8 @@
 
 工作流：[Build iOS IPA](../.github/workflows/ipa.yml)。使用 `macos-15` 与runner默认完整Xcode16+，先执行Debug/Release模拟器构建及全部XCTest；通过后执行iPhoneOS Release archive并导出IPA。失败保留日志和结果包，不上传伪成功产物。本流程不向App Store/TestFlight自动提交。
 
+当前版本使用Core Motion本机计步，**不再要求HealthKit描述文件**。运动与健身权限在App运行时由用户授权；Development签名、团队、App ID和目标设备仍需正确配置。
+
 ## 使用
 
 代码推送到GitHub后，打开 **Actions → Build iOS IPA → Run workflow**，选择分支和`signing`：
@@ -26,7 +28,7 @@ base64 -i AdHoc.mobileprovision | pbcopy
 
 `DIST_*`只能存放一套分发描述文件：选择`app-store`前，应确认其确实为App Store描述文件，Ad Hoc描述文件不能用于App Store导出。流程不会擅自转换描述文件或下载、更新设备列表。Ad Hoc和Development必须事先在Apple Developer注册目标iPhone的UDID，并重新生成包含该设备的描述文件。
 
-App ID必须显式指定（不支持通配符）、启用HealthKit，且团队与证书一致。流程从描述文件读取Bundle ID用于打包，不写回工程；描述文件过期、Team不符、缺HealthKit或模式不匹配时直接失败。导出后解包实际IPA，再验证签名、HealthKit entitlement、团队、App ID及开发调试标志；`receipt.json`的`healthkit_entitlement_verified`和`exported_signature_verified`只有这些检查通过才会为true。证书身份与描述文件是否可配对由Xcode实际签名验证，密码错误或证书缺私钥也会失败。
+App ID必须显式指定（不支持通配符），且团队与证书一致；无需HealthKit能力。流程从描述文件读取Bundle ID用于打包，不写回工程；描述文件过期、Team不符或模式不匹配时直接失败。导出后解包实际IPA，再验证签名、无HealthKit entitlement、团队、App ID及开发调试标志；`receipt.json`的`no_healthkit_entitlement_verified`和`exported_signature_verified`只有这些检查通过才会为true。证书身份与描述文件是否可配对由Xcode实际签名验证，密码错误或证书缺私钥也会失败。
 
 当前没有Widget target，`DEV_WIDGET_PROVISION_PROFILE`和`DIST_WIDGET_PROVISION_PROFILE`不使用。`BUILD_*`作为通用备用配置使用。`APPSTORE_API_KEY_ID`、`APPSTORE_API_PRIVATE_KEY`、`APPSTORE_ISSUER_ID`本流程不读取，因为当前只打包并导出，不自动上传Apple，也不请求自动管理证书。
 
@@ -40,7 +42,7 @@ App ID必须显式指定（不支持通配符）、启用HealthKit，且团队�
 
 另有`StairClimb-ipa-diagnostics-*`保存Xcode日志、构建收据、`Tests.xcresult`、`Archive.xcresult`。不上传整个`.runtime`、钥匙串、P12、描述文件、邮件或数据库凭证。签名时使用临时钥匙串，结束后删除，并恢复原钥匙串搜索列表及被覆盖的同UUID描述文件。
 
-Development/Ad Hoc IPA只能安装到该描述文件允许的设备；可使用Xcode或Apple Configurator进行自有设备安装。App Store IPA供后续上传分发，不能作为Ad Hoc包直接安装。未签名包不能直接安装。签名导出成功仍不代表已在iPhone安装或验证过HealthKit、网络信任和UI。
+Development/Ad Hoc IPA只能安装到该描述文件允许的设备；可使用Xcode或Apple Configurator进行自有设备安装。App Store IPA供后续上传分发，不能作为Ad Hoc包直接安装。未签名包不能直接安装。签名导出成功仍不代表已在iPhone安装或验证过Core Motion计步、网络信任和UI。
 
 ## 本地Mac命令
 
@@ -55,7 +57,7 @@ python3 scripts/build_signed_ipa.py --mode ad-hoc --output .runtime/ipa-signed-m
 
 ## 当前验证边界
 
-Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测试，覆盖错误团队、过期、缺HealthKit、通配App ID、错误分发模式、缺Secret、模拟器误打包、签名成功/失败的材料清理与密码不落日志。这些测试用替代Apple命令，仅验证脚本行为，不证明完成Swift编译或真实签名。首轮GitHub Mac运行已完成Debug/Release编译，但真实Keychain测试因关闭模拟器签名返回-34018，未导出IPA。本次改为模拟器ad hoc签名并显示失败详情，仍需新提交的Actions运行确认修复后结果，见[CI修复记录](verification-keychain-ci.md)。
+Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测试，覆盖错误团队、过期、无HealthKit的合法配置、通配App ID、错误分发模式、缺Secret、模拟器误打包、签名成功/失败的材料清理与密码不落日志。这些测试用替代Apple命令，仅验证脚本行为，不证明完成Swift编译或真实签名。首轮GitHub Mac运行已完成Debug/Release编译，但真实Keychain测试因关闭模拟器签名返回-34018，未导出IPA。本次改为模拟器ad hoc签名并显示失败详情，仍需新提交的Actions运行确认修复后结果，见[CI修复记录](verification-keychain-ci.md)。
 
 聊天目前按所有者要求关闭，IPA使用现有`CommunityFeatures.chatEnabled = false`。重新开放交流前需完成[UGC前置条件](CIRCLE_COMMUNITY.md)。
 
@@ -67,35 +69,10 @@ Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测�
 推送修复提交后，在新提交上运行workflow。直接点旧失败运行的Re-run会继续使用旧源码，无法应用新修复。诊断产物在运行页面底部Artifacts，名称为`StairClimb-ipa-diagnostics-<run_id>-<attempt>`；解压后查看`xctest.log`和`test-summary.log`。
 
 
-## iPhone 真机健康功能测试
+## iPhone 真机计步测试
 
-2026-11-15用户确认在iPhone安装的是unsigned产物，而Development包未生成。此前push默认unsigned不会执行开发签名；现在已改为默认Development。未经签名的IPA不能直接安装；通过第三方工具安装通常会涉及重签，不能假设保留HealthKit能力。本次故障尚无实际设备错误码或安装签名检查，不能将签名缺失认定为已经证实的唯一原因。
+当前默认Development签名包，使用既有`DEV_CERTIFICATE_P12`、`DEV_P12_PASSWORD`、`DEV_PROVISION_PROFILE`及`APPLE_TEAM_ID`。不需要HealthKit描述文件；当前所选描述文件若只是缺少HealthKit，迁移版不再因此拒绝构建。它仍须为正确Team和显式App ID、包含目标iPhone、未过期并与证书匹配。
 
-配置`DEV_CERTIFICATE_P12`、`DEV_P12_PASSWORD`、`DEV_PROVISION_PROFILE`和`APPLE_TEAM_ID`（允许上述表格中的备用变量），确保开发描述文件包含目标iPhone的UDID，并启用HealthKit。推送新代码，在新提交运行workflow。XCTest通过且导出签名检查通过后，下载`StairClimb-development-<run_id>-<attempt>`中的`StairClimb-development.ipa`，通过受支持的安装方式安装原始签名包，避免再次重签。设备可能需要在系统中开启开发者模式，以实际iOS提示为准。
+推送新代码后，在新提交运行workflow。全部XCTest和导出签名检查通过后，下载`StairClimb-development-<run_id>-<attempt>`中的`StairClimb-development.ipa`，按正常签名方式安装，开启运动与健身权限。具体设备验收见[Core Motion本机计步](MOTION_COUNTING.md)。本次没有读取GitHub Secret值，也没有生成真实IPA；最终结果以新提交的macOS Actions为准。
 
-本次没有访问GitHub Secret值，也没有真实Development导出结果；默认模式、导出校验和测试代码完成不代表开发证书或目标设备UDID已经配置正确。如果仍未生成，查看“Build and run every XCTest”是否通过，以及“Archive and export signed IPA”的首个错误。任何上游测试失败仍会阻止签名步骤。
-
-
-## 错误：Profile must enable the HealthKit capability
-
-该错误表示已成功解码所选描述文件，但其`Entitlements`中没有布尔值`com.apple.developer.healthkit=true`。当前工程已启用HealthKit；P12仅提供签名证书和私钥，不能给旧描述文件追加能力。校验必须保留，否则即使IPA签名导出，真机仍可能无法使用健康功能。
-
-修复步骤：
-
-1. 打开[Apple Developer Identifiers](https://developer.apple.com/account/resources/identifiers/list)，选中为爬楼梯使用的显式App ID，启用并保存HealthKit。仅需步数，不要为此开启Clinical Health Records。
-2. 在Profiles重新生成iOS App Development描述文件，选择相同App ID、现有Apple Development证书、目标iPhone设备，下载新的`.mobileprovision`。只保存App ID设置不会更新旧下载文件。
-3. 本地编码新文件：`base64 -i StairClimb_Development.mobileprovision | pbcopy`，在GitHub Repository secrets更新`DEV_PROVISION_PROFILE`。若日志显示使用备用`BUILD_PROVISION_PROFILE`，更新该变量或新建正确的`DEV_PROVISION_PROFILE`。
-4. 重新运行Development workflow。证书匹配且未过期时无须更换P12。新日志仅显示使用的Secret名称，收据也记录来源；不会打印描述文件内容。
-
-`DEV_PROVISION_PROFILE`优先于`BUILD_PROVISION_PROFILE`。如果前者已经存在，只更新后者不会生效。Ad Hoc/App Store对应更新`DIST_PROVISION_PROFILE`，并生成匹配分发类型的描述文件。
-
-若需要本地验证，只输出HealthKit布尔值，避免打印整个含设备标识的描述文件：
-
-```sh
-stairclimb_profile_plist="$(mktemp)"
-security cms -D -i StairClimb_Development.mobileprovision > "$stairclimb_profile_plist"
-/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.healthkit' "$stairclimb_profile_plist"
-rm "$stairclimb_profile_plist"
-```
-
-应输出`true`；缺键或输出false需重新生成。该操作由拥有Apple Developer权限的账号执行，CI不会自行修改账号的App ID、设备列表或签名配置。官方步骤见[启用App能力](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)及[编辑或下载描述文件](https://developer.apple.com/help/account/provisioning-profiles/edit-download-or-delete-profiles/)。
+旧版`Profile must enable the HealthKit capability`门禁已随本项目停止使用HealthKit而移除。只在新源码运行才会采用此更改；旧运行Re-run仍使用旧代码。保留团队、App ID、描述文件类型及最终签名校验，并拒绝最终应用重新带入HealthKit entitlement。新的收据标记`step_source: core-motion`，不代表系统运动权限已被用户授予或真机计步已通过。

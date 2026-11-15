@@ -22,9 +22,9 @@
 		B55024EF8BE31B31984A8A80 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StepRules.swift"; sourceTree = "<group>"; };
 		12672529BA77F32334407AF2 = { isa = PBXBuildFile; fileRef = B55024EF8BE31B31984A8A80; };
 		2BA340BF271E1A0E2D6B10FC = { isa = PBXGroup; children = ( 2A4E1EF26D30E97599FF3E91, 885F0F8AA22D18435E525B58, 65EB5E6DFD662C3ECFC4CFCC, B55024EF8BE31B31984A8A80 ); path = "Core"; sourceTree = "<group>"; };
-		7E487AAEFD84FF03923DE678 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HealthStepReader.swift"; sourceTree = "<group>"; };
+		7E487AAEFD84FF03923DE678 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MotionStepReader.swift"; sourceTree = "<group>"; };
 		780D01A5ADBD86A74C1BC191 = { isa = PBXBuildFile; fileRef = 7E487AAEFD84FF03923DE678; };
-		8BD5AC575C6D71DD62D3A3C3 = { isa = PBXGroup; children = ( 7E487AAEFD84FF03923DE678 ); path = "Health"; sourceTree = "<group>"; };
+		8BD5AC575C6D71DD62D3A3C3 = { isa = PBXGroup; children = ( 7E487AAEFD84FF03923DE678 ); path = "Motion"; sourceTree = "<group>"; };
 		43DF35A37522F9436F1F4A26 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IdentityVault.swift"; sourceTree = "<group>"; };
 		97568E28C96C0862B63DEFED = { isa = PBXBuildFile; fileRef = 43DF35A37522F9436F1F4A26; };
 		9F4DC03AA3220AA17A810BA6 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeychainStore.swift"; sourceTree = "<group>"; };
@@ -57,7 +57,7 @@
 		70F09BF32F6D77A92FF191B4 = { isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StairClimbTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6F7199ED7B63CDA338A0FB82 = { isa = PBXGroup; children = ( 81F31879437340D5CD6ED968, 70F09BF32F6D77A92FF191B4 ); name = Products; sourceTree = "<group>"; };
 		AA0596BBDB4DCC95D5D4F10C = { isa = PBXGroup; children = ( D5EC9B93162C9BD0D2CB06F1, 2D2582D042EE6C773F57669C, 1B3039B2E15DD2AB7EA6156D, 6F7199ED7B63CDA338A0FB82, 99B2612622859F92D7197CBF ); sourceTree = "<group>"; };
-		BC8CAE34D96B0E25516D8FF4 = { isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		BC8CAE34D96B0E25516D8FF4 = { isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMotion.framework; path = System/Library/Frameworks/CoreMotion.framework; sourceTree = SDKROOT; };
 		718ACE7513376162F8B2FA2F = { isa = PBXBuildFile; fileRef = BC8CAE34D96B0E25516D8FF4; };
 		4FE9FF971BBBBAC1969D755A = { isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		773E5D0314E2577CAFC415F5 = { isa = PBXBuildFile; fileRef = 4FE9FF971BBBBAC1969D755A; };
@@ -81,7 +81,7 @@
 		75F93D94C80F25B7A6BCCDAE = { isa = XCConfigurationList; buildConfigurations = ( 061531FC454E83EE1C78D4F1, C07D30961C90BC4ACFC24C24 ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		8C1A045E96B998B40533C7FF = { isa = PBXNativeTarget; buildConfigurationList = 5D32D499D7738AB763D0FB39; buildPhases = ( C7DEC6FCCD74FC72557EBA8A, 2002E5C43A61715491C7A45B, 88EAC1297EFC578EA1E87A58 ); buildRules = (); dependencies = (); name = StairClimb; productName = StairClimb; productReference = 81F31879437340D5CD6ED968; productType = "com.apple.product-type.application"; };
 		2ADDEE89B29C55E11126D89F = { isa = PBXNativeTarget; buildConfigurationList = 75F93D94C80F25B7A6BCCDAE; buildPhases = ( A57ACBA6561EA46A8CAE812B, 8A58C65CB9D050EF82C37406, 2459DEAD02179C67FC4BC79F ); buildRules = (); dependencies = ( F26350DAFE3F19AABFD69AC4 ); name = StairClimbTests; productName = StairClimbTests; productReference = 70F09BF32F6D77A92FF191B4; productType = "com.apple.product-type.bundle.unit-test"; };
-		244210E48437B6556980A702 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = { 8C1A045E96B998B40533C7FF = { CreatedOnToolsVersion = 16.0; SystemCapabilities = { com.apple.HealthKit = { enabled = 1; }; }; }; 2ADDEE89B29C55E11126D89F = { CreatedOnToolsVersion = 16.0; TestTargetID = 8C1A045E96B998B40533C7FF; }; }; }; buildConfigurationList = 9F6B1A7BCFF26D263B843F95; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = AA0596BBDB4DCC95D5D4F10C; productRefGroup = 6F7199ED7B63CDA338A0FB82; projectDirPath = ""; projectRoot = ""; targets = ( 8C1A045E96B998B40533C7FF, 2ADDEE89B29C55E11126D89F ); };
+		244210E48437B6556980A702 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = { 8C1A045E96B998B40533C7FF = { CreatedOnToolsVersion = 16.0; SystemCapabilities = {  }; }; 2ADDEE89B29C55E11126D89F = { CreatedOnToolsVersion = 16.0; TestTargetID = 8C1A045E96B998B40533C7FF; }; }; }; buildConfigurationList = 9F6B1A7BCFF26D263B843F95; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = AA0596BBDB4DCC95D5D4F10C; productRefGroup = 6F7199ED7B63CDA338A0FB82; projectDirPath = ""; projectRoot = ""; targets = ( 8C1A045E96B998B40533C7FF, 2ADDEE89B29C55E11126D89F ); };
 		BCFC18212B95576B13AE65D7 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient.swift"; sourceTree = "<group>"; };
 		83B6C03BC60576512459D872 = { isa = PBXBuildFile; fileRef = BCFC18212B95576B13AE65D7; };
 		77B6570EC30B5BE65E195933 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NetworkVault.swift"; sourceTree = "<group>"; };

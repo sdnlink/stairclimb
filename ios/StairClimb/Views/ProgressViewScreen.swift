@@ -12,7 +12,8 @@ struct ProgressViewScreen: View {
     @ObservedObject var model: LocalAppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var editingIdentity = false
-    @State private var showingHealthHelp = false
+    @State private var showingMotionHelp = false
+    private let stepPulse = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
     private let datePulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var busy: Bool { model.phase == .loading || model.phase == .requesting }
@@ -25,7 +26,7 @@ struct ProgressViewScreen: View {
                     StaircaseView(progress: model.snapshot?.progress, day: model.day.date,
                                   isStale: model.snapshotIsStale)
                     metrics
-                    healthStatus
+                    motionStatus
                     privacyNote
                 }
                 .padding(24)
@@ -49,11 +50,15 @@ struct ProgressViewScreen: View {
         .tint(Palette.jade)
         .preferredColorScheme(.light)
         .sheet(isPresented: $editingIdentity) { IdentitySheet(model: model) }
-        .sheet(isPresented: $showingHealthHelp) { HealthConnectionHelp(model: model) }
+        .sheet(isPresented: $showingMotionHelp) { MotionConnectionHelp(model: model) }
         .task { await model.activate() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.activate() } }
             else { model.markCached() }
+        }
+        .onReceive(stepPulse) { _ in
+            guard scenePhase == .active, model.hasRequestedMotionAccess else { return }
+            Task { await model.activate() }
         }
         .onReceive(datePulse) { _ in
             guard scenePhase == .active else { return }
@@ -64,7 +69,7 @@ struct ProgressViewScreen: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("本机健康进度", systemImage: "lock.shield")
+                Label("本机计步进度", systemImage: "lock.shield")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Palette.jade)
                 Spacer()
@@ -110,14 +115,14 @@ struct ProgressViewScreen: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var healthStatus: some View {
+    private var motionStatus: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(statusTitle, systemImage: statusSymbol).font(.headline)
             Text(statusDetail).font(.subheadline).foregroundStyle(.secondary)
-            if let diagnostic = model.healthDiagnostic {
+            if let diagnostic = model.motionDiagnostic {
                 Text("错误编号：\(diagnostic)").font(.caption.monospaced()).textSelection(.enabled)
             }
-            Button("健康连接帮助", systemImage: "questionmark.circle") { showingHealthHelp = true }
+            Button("计步帮助", systemImage: "questionmark.circle") { showingMotionHelp = true }
                 .font(.subheadline)
             if let snapshot = model.snapshot {
                 Text("上次成功读取 · 上海 \(ShanghaiDay.timeLabel(for: snapshot.readAt))")
@@ -131,18 +136,18 @@ struct ProgressViewScreen: View {
                 HStack {
                     Button {
                         Task {
-                            if !model.hasRequestedHealthAccess { await model.requestHealthAccess() }
+                            if !model.hasRequestedMotionAccess { await model.requestMotionAccess() }
                             else { await model.refresh() }
                         }
                     } label: {
                         HStack {
                             if busy { ProgressView().controlSize(.small) }
-                            Text(busy ? "正在更新" : !model.hasRequestedHealthAccess ? "连接 Apple 健康" : "重新读取今日步数")
+                            Text(busy ? "正在更新" : !model.hasRequestedMotionAccess ? "开启本机计步" : "重新读取今日步数")
                         }
                     }
                     .buttonStyle(.borderedProminent).disabled(busy)
                     if model.phase != .needsRequest && !busy {
-                        Button("健康访问") { Task { await model.requestHealthAccess() } }
+                        Button("运动访问") { Task { await model.requestMotionAccess() } }
                             .font(.caption)
                     }
                 }
@@ -157,23 +162,23 @@ struct ProgressViewScreen: View {
     private var statusTitle: String {
         switch model.phase {
         case .needsRequest: "从今天的步数开始"
-        case .requesting: "正在请求健康访问"
+        case .requesting: "正在请求运动访问"
         case .loading: "正在读取今日步数"
         case .data: "今日进度已更新"
         case .noReadableData: "暂无可读步数"
-        case .unavailable: "此设备无法使用健康数据"
+        case .unavailable: "此设备无法使用运动数据"
         case .failed: "本次更新未完成"
         }
     }
 
     private var statusDetail: String {
         switch model.phase {
-        case .needsRequest: "只读取上海当日步数汇总。你可自行决定健康访问权限；本机查看无需公开共享。"
-        case .requesting: "请在系统健康访问页面选择。完成流程不代表已授予读取权限。"
-        case .loading: "按上海00:00至次日00:00重新查询；过期的昨日结果不会用于今天。"
-        case .data: "这里显示本机今日进度，下拉可刷新。公开共享和服务器同步状态请查看“今日楼层榜”。"
-        case .noReadableData: "当前可读汇总为空，暂显示0步。可能尚无记录或未开放读取，App无法区分。可在系统设置的健康权限中检查。"
-        case .unavailable: "请在支持 Apple 健康的 iPhone 上使用。这里不会生成演示步数。"
+        case .needsRequest: "使用 Core Motion 读取此 iPhone 上海当日累计步数，不读取 Apple 健康。你可自行决定运动访问权限；本机查看无需公开共享。"
+        case .requesting: "请在系统弹窗中允许“运动与健身”。拒绝后可在系统设置中重新开启。"
+        case .loading: "按上海00:00至当前时间重新查询；过期的昨日结果不会用于今天。"
+        case .data: "这里显示此 iPhone 的今日计步，前台每15秒刷新，也可下拉刷新。公开共享和服务器同步状态请查看“今日楼层榜”。"
+        case .noReadableData: "当前可读汇总为空，暂显示0步。可能暂无本机计步记录；请确认运动与健身权限已开启并携带手机行走后重试。"
+        case .unavailable: "请在支持运动与健身计步的 iPhone 上使用。这里不会生成演示步数。"
         case .failed: model.readingError ?? "读取未完成，请稍后重试。"
         }
     }
@@ -190,13 +195,13 @@ struct ProgressViewScreen: View {
     private var privacyNote: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("走的是步数，登的是虚拟楼层").font(.subheadline.bold())
-            Text("每100步兑换1层，是步数游戏换算，不是健康App记录的实际已爬楼层。每日上海00:00重新统计，历史健康数据不会被清除。不采集真实地理位置。")
+            Text("每100步兑换1层，是步数游戏换算，不是健康App记录的实际已爬楼层。每日上海00:00重新统计，历史运动数据不会被清除。不采集真实地理位置。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
 
-// Presentation state only: no HealthKit writes, synthetic steps or network uploads.
+// Presentation state only: no Core Motion writes, synthetic steps or network uploads.
 @MainActor
 private struct StaircaseView: View {
     let progress: StepProgress?
@@ -355,7 +360,7 @@ private struct StaircaseView: View {
                 Text(reduceMotion ? "已遵循减少动态效果；仍可点选楼层。" : "回放仅展示已完成楼层，不增加运动步数。")
                     .font(.caption2).opacity(0.75)
             } else {
-                Label("连接 Apple 健康后，点亮你的第一层", systemImage: "heart")
+                Label("开启本机计步后，点亮你的第一层", systemImage: "heart")
                     .font(.subheadline).fixedSize(horizontal: false, vertical: true)
                 Text("这里不会生成演示步数。")
                     .font(.caption2).opacity(0.75)
@@ -472,7 +477,7 @@ private struct IdentitySheet: View {
                     }.disabled(model.identityError != nil)
                 }
                 Section("隐私与恢复") {
-                    Text("本机进度不需要共享同意，也不会自动公开昵称或健康数据。")
+                    Text("本机进度不需要共享同意，也不会自动公开昵称或运动数据。")
                     Text("本机身份不绑定邮箱，也不支持跨设备找回。丢失安全存储、移除本机身份或重装可能无法恢复原身份；系统是否保留卸载后的Keychain数据不能保证。请勿把本机编号当作账号恢复凭证。联网邮箱账号可在“今日楼层榜”登录或找回密码，不影响本机查看步数。")
                 }
             }
@@ -485,41 +490,40 @@ private struct IdentitySheet: View {
 
 
 @MainActor
-private struct HealthConnectionHelp: View {
+private struct MotionConnectionHelp: View {
     @ObservedObject var model: LocalAppModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
-                Section("检查健康访问") {
-                    Text("保持 iPhone 解锁并让应用处于前台，先打开 Apple 健康 App，确认今天的步数中有记录。")
-                    Text("在健康 App 的个人头像中找到“App”或“App 和服务”，选择“爬楼梯”，检查步数读取权限。不同 iOS 版本的菜单名称可能略有不同。")
-                    Text("若列表中没有本应用，返回此页请求健康访问。完成系统流程不代表一定授予读取；当无记录或未开放读取时，App无法区分原因。")
-                    Button("重新请求健康访问") { Task { await model.requestHealthAccess() } }
+                Section("开启本机计步") {
+                    Text("本应用使用 Core Motion 的系统计步，不连接 Apple 健康，不合并 Apple Watch 或其他设备的数据。请携带此 iPhone 行走。")
+                    Text("首次点击“开启本机计步”会请求运动与健身权限。如果曾拒绝，请到系统设置的“隐私与安全性 → 运动与健身”中允许爬楼梯。")
+                    Button("开启本机计步") { Task { await model.requestMotionAccess() } }
                         .disabled(model.phase == .requesting || model.phase == .loading || model.phase == .unavailable)
                     Link("打开本应用设置", destination: URL(string: UIApplication.openSettingsURLString)!)
-                    Text("设置页不一定提供健康权限开关；请以健康 App 的权限页面为准。")
+                    Text("系统菜单名称可能随 iOS 版本变化，运动权限也可在隐私与安全性中查找。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("设备与安装包") {
-                    Text("模拟器没有真实 iPhone 步数；正式验证请使用有步数记录的 iPhone。")
-                    Text("若通过第三方工具重新签名安装，需保留 HealthKit 权限，并使用 App ID 已启用 HealthKit 的描述文件。没有此能力的安装包需要重新构建，无法通过重复点击授权修复。")
-                    Text("设备受管理或开启限制策略时，健康访问可能不可用。")
+                Section("刷新与设备") {
+                    Text("前台约每15秒查询一次今日累计值，重复刷新不会叠加计步。应用挂起时不保证实时回调；返回前台会补查当天的系统记录。")
+                    Text("系统通常提供最近7天的本机计步历史。本页只查询上海时间今天，不会导入其他设备汇总。")
+                    Text("模拟器不提供真实计步；本应用无需 HealthKit 描述文件，但 iPhone 安装包仍需正常签名。设备管理策略也可能限制运动访问。")
                 }
                 Section("排查信息") {
                     LabeledContent("iOS", value: UIDevice.current.systemVersion)
                     LabeledContent("应用版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
                     LabeledContent("构建号", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")
                     LabeledContent("应用标识", value: Bundle.main.bundleIdentifier ?? "—")
-                    if let diagnostic = model.healthDiagnostic {
+                    if let diagnostic = model.motionDiagnostic {
                         Text("错误编号：\(diagnostic)").textSelection(.enabled)
                     }
-                    Text("反馈时可提供上方错误编号和安装方式，无需发送健康记录或账号凭证。")
+                    Text("反馈时可提供上方错误编号和安装方式，无需发送运动记录或账号凭证。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("健康连接帮助")
+            .navigationTitle("计步帮助")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
     }

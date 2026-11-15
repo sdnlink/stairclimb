@@ -1,22 +1,22 @@
 import XCTest
-import HealthKit
+import CoreMotion
 @testable import StairClimb
 
 @MainActor
-private final class TestHealthReader: HealthStepReading {
+private final class TestStepReader: StepReadingProviding {
     var isAvailable = true
-    var result: Result<HealthReading, Error> = .success(.total(101))
+    var result: Result<StepReading, Error> = .success(.total(101))
     var accessError: Error?
     var requestCount = 0
     var queryDays: [ShanghaiDay] = []
-    var pending: [CheckedContinuation<HealthReading, Error>] = []
+    var pending: [CheckedContinuation<StepReading, Error>] = []
     var suspend = false
 
     func requestAccess() async throws {
         requestCount += 1
         if let accessError { throw accessError }
     }
-    func readSteps(in day: ShanghaiDay) async throws -> HealthReading {
+    func readSteps(in day: ShanghaiDay) async throws -> StepReading {
         queryDays.append(day)
         if suspend { return try await withCheckedThrowingContinuation { pending.append($0) } }
         return try result.get()
@@ -25,7 +25,7 @@ private final class TestHealthReader: HealthStepReading {
 
 @MainActor
 final class LocalAppModelTests: XCTestCase {
-    private var reader: TestHealthReader!
+    private var reader: TestStepReader!
     private var store: MemorySecureStore!
     private var defaults: UserDefaults!
     private var suite: String!
@@ -33,7 +33,7 @@ final class LocalAppModelTests: XCTestCase {
     private var model: LocalAppModel!
 
     override func setUp() async throws {
-        reader = TestHealthReader()
+        reader = TestStepReader()
         store = MemorySecureStore()
         suite = "cn.stairclimb.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
@@ -46,26 +46,34 @@ final class LocalAppModelTests: XCTestCase {
         model = nil
     }
 
+    func testLegacyHealthPermissionFlagDoesNotAuthorizeMotionReader() async {
+        defaults.set(true, forKey: "healthAccessRequestAttempted")
+        await model.activate()
+        XCTAssertFalse(model.hasRequestedMotionAccess)
+        XCTAssertTrue(reader.queryDays.isEmpty)
+        XCTAssertEqual(model.phase, .needsRequest)
+    }
+
     func testFirstLaunchDoesNotReadBeforeRequest() async {
         await model.activate()
         XCTAssertEqual(model.phase, .needsRequest)
         XCTAssertNil(model.snapshot)
         XCTAssertEqual(reader.queryDays.count, 0)
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(reader.requestCount, 1)
         XCTAssertEqual(model.snapshot?.progress.steps, 101)
     }
 
     func testNoReadableDataDoesNotClaimDenial() async {
         reader.result = .success(.noReadableData)
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .noReadableData)
         XCTAssertEqual(model.snapshot?.progress.steps, 0)
         XCTAssertNil(model.readingError)
     }
 
     func testReadFailurePreservesSameDayLastValueWithoutSuccess() async {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         let successfulRead = model.snapshot?.readAt
         now.addTimeInterval(0.25)
         reader.result = .failure(MemorySecureStore.Failure.unavailable)
@@ -78,7 +86,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testCachedReadKeepsSuccessTimeUntilNewResultAndClearsAtMidnight() async throws {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         let successfulRead = model.snapshot?.readAt
         XCTAssertFalse(model.snapshotIsStale)
         model.markCached()
@@ -101,61 +109,58 @@ final class LocalAppModelTests: XCTestCase {
 
     func testInitialReadFailureIsNotSuccessfulZero() async {
         reader.result = .failure(MemorySecureStore.Failure.unavailable)
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .failed)
         XCTAssertNil(model.snapshot)
     }
 
-    func testHealthFailureExplainsLockedDatabaseAndPreservesRealSteps() async {
-        await model.requestHealthAccess()
-        reader.result = .failure(NSError(domain: HKErrorDomain,
-            code: HKError.Code.errorDatabaseInaccessible.rawValue))
+    func testRevokedMotionPermissionPreservesCachedStepsWithoutSuccess() async {
+        await model.requestMotionAccess()
+        reader.result = .failure(MotionStepReader.Failure.denied)
         await model.refresh()
         XCTAssertEqual(model.phase, .failed)
         XCTAssertEqual(model.snapshot?.progress.steps, 101)
         XCTAssertTrue(model.snapshotIsStale)
-        XCTAssertTrue(model.readingError?.contains("解锁") == true)
-        XCTAssertEqual(model.healthDiagnostic, "\(HKErrorDomain) · \(HKError.Code.errorDatabaseInaccessible.rawValue)")
+        XCTAssertTrue(model.readingError?.contains("运动与健身") == true)
+        XCTAssertEqual(model.motionDiagnostic, "CoreMotion · denied")
         reader.result = .success(.total(200))
         await model.refresh()
-        XCTAssertNil(model.healthDiagnostic)
+        XCTAssertNil(model.motionDiagnostic)
         XCTAssertNil(model.readingError)
         XCTAssertEqual(model.snapshot?.progress.steps, 200)
     }
 
     func testRequestFailureHasSafeDiagnosticAndCannotClaimCompletedAuthorization() async {
-        reader.accessError = NSError(domain: HKErrorDomain,
-            code: HKError.Code.errorHealthDataRestricted.rawValue,
-            userInfo: [NSLocalizedDescriptionKey: "private health query contents"])
-        await model.requestHealthAccess()
+        reader.accessError = MotionStepReader.Failure.restricted
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .failed)
-        XCTAssertFalse(model.hasRequestedHealthAccess)
+        XCTAssertFalse(model.hasRequestedMotionAccess)
         XCTAssertTrue(reader.queryDays.isEmpty)
         XCTAssertTrue(model.readingError?.contains("限制") == true)
         XCTAssertFalse(model.readingError?.contains("private") == true)
-        XCTAssertNotNil(model.healthDiagnostic)
+        XCTAssertNotNil(model.motionDiagnostic)
     }
 
     func testAuthorizationFailureCanRetry() async {
         reader.accessError = MemorySecureStore.Failure.unavailable
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(reader.queryDays.isEmpty)
         reader.accessError = nil
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .data)
     }
 
     func testUnavailableHealthDoesNotFabricateData() async {
         reader.isAvailable = false
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .unavailable)
         XCTAssertNil(model.snapshot)
         XCTAssertEqual(reader.requestCount, 0)
     }
 
     func testForegroundRefreshUsesNewDataWithoutAnotherPrompt() async {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.result = .success(.total(200))
         await model.activate()
         XCTAssertEqual(model.snapshot?.progress.floor, 2)
@@ -163,7 +168,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testRestartKeepsRequestAttemptButQueriesAgain() async {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.result = .success(.total(180))
         let restored = LocalAppModel(reader: reader, vault: IdentityVault(store: store), defaults: defaults, clock: { self.now })
         XCTAssertNil(restored.snapshot)
@@ -173,7 +178,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testMidnightImmediatelyClearsYesterdayEvenIfNewReadFails() async {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         now.addTimeInterval(1)
         XCTAssertTrue(model.updateDayIfNeeded())
         XCTAssertEqual(model.day.date, "2026-11-15")
@@ -186,7 +191,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testOutOfRangeHealthValueIsFailureAndKeepsPreviousValue() async {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.result = .success(.total(1_000_001))
         await model.refresh()
         XCTAssertEqual(model.phase, .failed)
@@ -203,7 +208,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testOverlappingRefreshIsSuppressed() async throws {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.suspend = true
         let task = Task { await model.refresh() }
         try await waitForPending(1)
@@ -216,7 +221,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testLateYesterdayResponseCannotOverwriteToday() async throws {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.suspend = true
         let oldTask = Task { await model.refresh() }
         try await waitForPending(1)
@@ -232,7 +237,7 @@ final class LocalAppModelTests: XCTestCase {
     }
 
     func testQueryFinishingAcrossMidnightTriggersFreshQuery() async throws {
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         reader.suspend = true
         let task = Task { await model.refresh() }
         try await waitForPending(1)
@@ -263,7 +268,7 @@ final class LocalAppModelTests: XCTestCase {
 
     func testNoConsentOrIdentityIsNeededToReadLocalSteps() async {
         XCTAssertNil(model.identity)
-        await model.requestHealthAccess()
+        await model.requestMotionAccess()
         XCTAssertEqual(model.phase, .data)
         XCTAssertEqual(model.snapshot?.progress.steps, 101)
         XCTAssertNil(store.data)
@@ -271,32 +276,133 @@ final class LocalAppModelTests: XCTestCase {
 }
 
 
-final class HealthQueryResultTests: XCTestCase {
-    func testEmptyStatisticsAndExplicitNoDataAreEmptyRatherThanFailedReads() throws {
-        XCTAssertEqual(try HealthStepReader.result(total: nil, error: nil), .noReadableData)
-        let empty = NSError(domain: HKErrorDomain, code: HKError.Code.errorNoData.rawValue)
-        XCTAssertEqual(try HealthStepReader.result(total: nil, error: empty), .noReadableData)
-        XCTAssertEqual(try HealthStepReader.result(total: 0, error: nil), .total(0))
-        XCTAssertEqual(try HealthStepReader.result(total: 101, error: nil), .total(101))
+@MainActor
+private final class PedometerStub: PedometerQuerying {
+    var isAvailable = true
+    var authorizationStatus = CMAuthorizationStatus.authorized
+    var queries: [(Date, Date)] = []
+    var result: Result<Double?, Error> = .success(123)
+    var statusAfterQuery: CMAuthorizationStatus?
+
+    func query(from start: Date, to end: Date) async throws -> Double? {
+        queries.append((start, end))
+        if let statusAfterQuery { authorizationStatus = statusAfterQuery }
+        return try result.get()
+    }
+}
+
+@MainActor
+final class MotionStepReaderTests: XCTestCase {
+    func testUsesShanghaiMidnightThroughNowRegardlessOfDeviceTimezone() async throws {
+        let originalZone = NSTimeZone.default
+        defer { NSTimeZone.default = originalZone }
+        NSTimeZone.default = TimeZone(identifier: "America/Los_Angeles")!
+        let now = NetworkTestData.now
+        let day = ShanghaiDay(containing: now)
+        let query = PedometerStub()
+        let reader = MotionStepReader(pedometer: query, clock: { now })
+        let reading = try await reader.readSteps(in: day)
+        XCTAssertEqual(reading, .total(123))
+        XCTAssertEqual(query.queries.first?.0, ISO8601DateFormatter().date(from: "2026-11-13T16:00:00Z"))
+        XCTAssertEqual(query.queries.first?.1, now)
+        let repeated = try await reader.readSteps(in: day)
+        XCTAssertEqual(repeated, .total(123))
+        XCTAssertEqual(query.queries.count, 2)
     }
 
-    func testDatabaseAndAuthorizationFailuresNeverBecomeEmptyOrZeroSteps() {
-        for code in [HKError.Code.errorDatabaseInaccessible, .errorAuthorizationDenied, .errorHealthDataRestricted] {
-            let failure = NSError(domain: HKErrorDomain, code: code.rawValue)
-            XCTAssertThrowsError(try HealthStepReader.result(total: nil, error: failure))
-            XCTAssertThrowsError(try HealthStepReader.result(total: 100, error: failure))
+    func testInitialPermissionProbeIsDiscardedAndDoesNotBecomeTodaysSteps() async throws {
+        let query = PedometerStub()
+        query.authorizationStatus = .notDetermined
+        query.statusAfterQuery = .authorized
+        query.result = .success(987)
+        let now = NetworkTestData.now
+        let reader = MotionStepReader(pedometer: query, clock: { now })
+        try await reader.requestAccess()
+        XCTAssertEqual(query.queries.count, 1)
+        XCTAssertEqual(query.queries[0].0, now.addingTimeInterval(-1))
+        XCTAssertEqual(query.queries[0].1, now)
+        query.result = .success(100)
+        let reading = try await reader.readSteps(in: ShanghaiDay(containing: now))
+        XCTAssertEqual(reading, .total(100))
+        XCTAssertEqual(query.queries[1].0, ShanghaiDay(containing: now).start)
+        // Existing authorization does not trigger another probe/prompt.
+        try await reader.requestAccess()
+        XCTAssertEqual(query.queries.count, 2)
+    }
+
+    func testDeniedRestrictedAndUnavailableNeverIssueASensorQuery() async {
+        for status in [CMAuthorizationStatus.denied, .restricted] {
+            let query = PedometerStub(); query.authorizationStatus = status
+            let reader = MotionStepReader(pedometer: query)
+            do { try await reader.requestAccess(); XCTFail("Must not authorize denied/restricted access") }
+            catch { XCTAssertTrue(error is MotionStepReader.Failure) }
+            do { _ = try await reader.readSteps(in: ShanghaiDay(containing: Date())); XCTFail("Must not query") }
+            catch { XCTAssertTrue(error is MotionStepReader.Failure) }
+            XCTAssertTrue(query.queries.isEmpty)
         }
-        let unrelated = NSError(domain: NSCocoaErrorDomain, code: HKError.Code.errorNoData.rawValue)
-        XCTAssertThrowsError(try HealthStepReader.result(total: nil, error: unrelated))
+        let query = PedometerStub(); query.isAvailable = false
+        let reader = MotionStepReader(pedometer: query)
+        XCTAssertFalse(reader.isAvailable)
+        do { try await reader.requestAccess(); XCTFail("Unavailable device") }
+        catch { XCTAssertEqual(error as? MotionStepReader.Failure, .unavailable) }
+        XCTAssertTrue(query.queries.isEmpty)
     }
 
-    func testFailurePresentationDoesNotRevealRawSystemMessageOrUserInfo() {
-        let failure = NSError(domain: "private-user-specific-domain", code: 123,
-                              userInfo: [NSLocalizedDescriptionKey: "private sample or credential"])
-        XCTAssertEqual(HealthFailureMessage.diagnostic(for: failure), "SystemError · 123")
-        XCTAssertFalse(HealthFailureMessage.detail(for: failure, requesting: false).contains("private"))
-        let notDetermined = NSError(domain: HKErrorDomain,
-            code: HKError.Code.errorAuthorizationNotDetermined.rawValue)
-        XCTAssertTrue(HealthFailureMessage.detail(for: notDetermined, requesting: false).contains("健康访问"))
+    func testDeniedPermissionAfterPromptIsNotSuccessfulZero() async {
+        let query = PedometerStub(); query.authorizationStatus = .notDetermined
+        query.statusAfterQuery = .denied; query.result = .success(0)
+        let reader = MotionStepReader(pedometer: query)
+        do { try await reader.requestAccess(); XCTFail("Denied probe must not succeed") }
+        catch { XCTAssertEqual(error as? MotionStepReader.Failure, .denied) }
+    }
+
+    func testEmptyZeroAndQueryErrorAreDistinct() async throws {
+        let query = PedometerStub(), now = NetworkTestData.now
+        let reader = MotionStepReader(pedometer: query, clock: { now })
+        query.result = .success(nil)
+        let empty = try await reader.readSteps(in: ShanghaiDay(containing: now))
+        XCTAssertEqual(empty, .noReadableData)
+        query.result = .success(0)
+        let zero = try await reader.readSteps(in: ShanghaiDay(containing: now))
+        XCTAssertEqual(zero, .total(0))
+        query.result = .failure(NSError(domain: CMErrorDomain, code: 42))
+        do { _ = try await reader.readSteps(in: ShanghaiDay(containing: now)); XCTFail("Error is not empty data") }
+        catch { XCTAssertEqual((error as NSError).domain, CMErrorDomain) }
+    }
+
+    func testPermissionRevokedDuringQueryCannotPublishCount() async {
+        let query = PedometerStub(); query.statusAfterQuery = .denied
+        let now = NetworkTestData.now
+        let reader = MotionStepReader(pedometer: query, clock: { now })
+        do { _ = try await reader.readSteps(in: ShanghaiDay(containing: now)); XCTFail("Revoked access must fail") }
+        catch { XCTAssertEqual(error as? MotionStepReader.Failure, .denied) }
+    }
+
+    func testUndeterminedReadDoesNotTriggerPermissionWithoutExplicitAction() async {
+        let query = PedometerStub(); query.authorizationStatus = .notDetermined
+        let reader = MotionStepReader(pedometer: query)
+        do { _ = try await reader.readSteps(in: ShanghaiDay(containing: Date())); XCTFail("Must request first") }
+        catch { XCTAssertEqual(error as? MotionStepReader.Failure, .notDetermined) }
+        XCTAssertTrue(query.queries.isEmpty)
+    }
+
+    func testFutureDayNeverQueriesAndPastDayEndsAtItsMidnight() async throws {
+        let query = PedometerStub(), now = NetworkTestData.now
+        let reader = MotionStepReader(pedometer: query, clock: { now })
+        let tomorrow = ShanghaiDay(containing: now.addingTimeInterval(86400))
+        do { _ = try await reader.readSteps(in: tomorrow); XCTFail("Future day must fail") }
+        catch { XCTAssertEqual(error as? MotionStepReader.Failure, .invalidInterval) }
+        XCTAssertTrue(query.queries.isEmpty)
+        let yesterday = ShanghaiDay(containing: now.addingTimeInterval(-86400))
+        _ = try await reader.readSteps(in: yesterday)
+        XCTAssertEqual(query.queries.first?.1, yesterday.end)
+    }
+
+    func testMotionDiagnosticDoesNotExposeRawErrorDetails() {
+        let error = NSError(domain: "private device domain", code: 123,
+            userInfo: [NSLocalizedDescriptionKey: "private step record"])
+        XCTAssertEqual(MotionFailureMessage.diagnostic(for: error), "SystemError · 123")
+        XCTAssertFalse(MotionFailureMessage.detail(for: error, requesting: false).contains("private"))
+        XCTAssertTrue(MotionFailureMessage.detail(for: MotionStepReader.Failure.denied, requesting: false).contains("运动与健身"))
     }
 }

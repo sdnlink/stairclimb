@@ -93,7 +93,7 @@ def validate(root, output, requested=None):
                'started_at': datetime.now(timezone.utc).isoformat(),
                'source': source_snapshot(root), 'commands': [],
                'simulator_signing': 'Ad hoc identity (-); no Apple certificate or provisioning profile',
-               'limitations': ['Simulator builds use ad hoc signing; no device signing, HealthKit, '
+               'limitations': ['Simulator builds use ad hoc signing; no device signing, real motion sensor data, '
                                'system certificate trust or visual interaction is verified.']}
 
     def save():
