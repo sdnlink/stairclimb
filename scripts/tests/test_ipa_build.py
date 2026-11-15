@@ -51,6 +51,19 @@ class IPAValidationTests(unittest.TestCase):
         with self.assertRaises(signed.SigningFailure):
             signed.validate_profile(profile('ad-hoc'),TEAM,'app-store')
 
+    def test_exported_signature_must_keep_healthkit_identity_and_expected_debug_mode(self):
+        for mode in ['development','ad-hoc','app-store']:
+            value=profile(mode)
+            entitlements=dict(value['Entitlements'])
+            self.assertEqual(signed.validate_signed_entitlements(entitlements,value,TEAM,mode),'cn.stairclimb.app')
+            for field,replacement in [('com.apple.developer.healthkit',False),
+                    ('application-identifier',TEAM+'.other.app'),
+                    ('com.apple.developer.team-identifier','WRONG12345'),
+                    ('get-task-allow',mode!='development')]:
+                changed=dict(entitlements);changed[field]=replacement
+                with self.subTest(mode=mode,field=field),self.assertRaises(signed.SigningFailure):
+                    signed.validate_signed_entitlements(changed,value,TEAM,mode)
+
     def test_material_fallback_and_missing_credentials(self):
         with patch.dict(os.environ,{'BUILD_CERTIFICATE_P12':'base-cert','BUILD_PROVISION_PROFILE':'base-profile',
                                     'P12_PASSWORD':'base-password'},clear=True):
@@ -83,25 +96,35 @@ class IPAValidationTests(unittest.TestCase):
 
 
 class SigningLifecycleTests(unittest.TestCase):
-    def exercise(self, fail_archive=False):
+    def exercise(self, fail_archive=False, mode='ad-hoc', missing_healthkit=False):
         with tempfile.TemporaryDirectory() as temp:
             temp=Path(temp);out=temp/'artifacts';fake_home=temp/'home';fake_home.mkdir()
             profiles=fake_home/'Library/MobileDevice/Provisioning Profiles';profiles.mkdir(parents=True)
             existing=profiles/(PROFILE_ID+'.mobileprovision');existing.write_bytes(b'original profile')
-            env={'APPLE_TEAM_ID':TEAM,'DIST_CERTIFICATE_P12':base64.b64encode(b'fake certificate').decode(),
-                'DIST_PROVISION_PROFILE':base64.b64encode(b'fake profile').decode(),
-                'DIST_P12_PASSWORD':PASSWORD,'RUNNER_TEMP':str(temp)}
+            prefix='DEV' if mode=='development' else 'DIST'
+            env={'APPLE_TEAM_ID':TEAM,prefix+'_CERTIFICATE_P12':base64.b64encode(b'fake certificate').decode(),
+                prefix+'_PROVISION_PROFILE':base64.b64encode(b'fake profile').decode(),
+                prefix+'_P12_PASSWORD':PASSWORD,'RUNNER_TEMP':str(temp)}
             calls=[]
             def fake_run(args,**kwargs):
                 calls.append(args)
                 tool=args[0];stdout=b'';code=0
                 if tool=='git':stdout=b'fixture-revision\n'
                 elif tool=='security':
-                    if args[1:3]==['cms','-D']:stdout=plistlib.dumps(profile())
+                    if args[1:3]==['cms','-D']:stdout=plistlib.dumps(profile(mode))
                     elif args[1:3]==['list-keychains','-d'] and '-s' not in args:stdout=b'"/original.keychain-db"\n'
                     elif args[1]=='create-keychain':Path(args[-1]).write_bytes(b'fake keychain')
                     elif args[1]=='delete-keychain':Path(args[-1]).unlink()
-                    elif args[1]=='find-identity':stdout=('1) '+'A'*40+' "Apple Distribution: Fixture"\n').encode()
+                    elif args[1]=='find-identity':
+                        kind='Apple Development' if mode=='development' else 'Apple Distribution'
+                        stdout=('1) '+'A'*40+' "'+kind+': Fixture"\n').encode()
+                elif tool=='ditto':
+                    application=Path(args[-1])/'Payload/StairClimb.app';application.mkdir(parents=True)
+                    (application/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'cn.stairclimb.app'}))
+                elif tool=='codesign' and '-d' in args:
+                    entitlements=dict(profile(mode)['Entitlements'])
+                    if missing_healthkit:entitlements.pop('com.apple.developer.healthkit')
+                    stdout=plistlib.dumps(entitlements)
                 elif tool=='xcodebuild':
                     if args[1:]==['-version']:stdout=b'Xcode 16.4\nBuild version fixture\n'
                     elif 'archive'==args[-1]:code=65 if fail_archive else 0
@@ -111,13 +134,15 @@ class SigningLifecycleTests(unittest.TestCase):
                 if hasattr(kwargs.get('stdout'),'write'):kwargs['stdout'].write(stdout.decode())
                 return subprocess.CompletedProcess(args,code,stdout=stdout.decode() if kwargs.get('text') else stdout,stderr=b'')
             with patch.dict(os.environ,env,clear=True),patch('platform.system',return_value='Darwin'),patch('shutil.which',return_value='/fake/tool'),patch('build_signed_ipa.ROOT',temp),patch('pathlib.Path.home',return_value=fake_home),patch('subprocess.run',side_effect=fake_run):
-                if fail_archive:
-                    with self.assertRaises(signed.SigningFailure):signed.build('ad-hoc',out)
+                if fail_archive or missing_healthkit:
+                    with self.assertRaises(signed.SigningFailure):signed.build(mode,out)
                 else:
-                    receipt=signed.build('ad-hoc',out)
+                    receipt=signed.build(mode,out)
                     self.assertEqual(receipt['status'],'passed')
                     self.assertFalse(receipt['uploaded_to_apple'])
-                    self.assertTrue((out/'StairClimb-ad-hoc.ipa.sha256').exists())
+                    self.assertTrue((out/('StairClimb-'+mode+'.ipa.sha256')).exists())
+                    self.assertTrue(receipt['healthkit_entitlement_verified'])
+                    self.assertTrue(receipt['exported_signature_verified'])
             self.assertEqual(existing.read_bytes(),b'original profile')
             self.assertEqual(list((fake_home/'Library/Developer/Xcode/UserData/Provisioning Profiles').glob('*.mobileprovision')),[])
             self.assertEqual(list(temp.glob('*.keychain-db')),[])
@@ -126,12 +151,14 @@ class SigningLifecycleTests(unittest.TestCase):
             for file in out.glob('*'):
                 if file.is_file():self.assertNotIn(PASSWORD,file.read_text(errors='replace'))
             receipt=json.loads((out/'receipt.json').read_text())
-            self.assertEqual(receipt['status'],'failed' if fail_archive else 'passed')
+            self.assertEqual(receipt['status'],'failed' if fail_archive or missing_healthkit else 'passed')
             self.assertTrue(receipt['signing_cleanup_passed'])
-            if fail_archive:self.assertEqual(list(out.glob('*.ipa')),[])
+            if fail_archive or missing_healthkit:self.assertEqual(list(out.glob('*.ipa')),[])
 
     def test_success_cleans_signing_material_and_does_not_log_password(self):self.exercise()
     def test_archive_failure_cleans_keychain_restores_profile_and_keeps_failure_receipt(self):self.exercise(True)
+    def test_development_mode_uses_development_identity_and_verifies_exported_healthkit(self):self.exercise(mode='development')
+    def test_missing_exported_healthkit_rejects_artifact_and_cleans_signing_files(self):self.exercise(missing_healthkit=True)
 
 
 if __name__=='__main__':unittest.main()

@@ -9,11 +9,11 @@
 | 模式 | 用途 | 必要配置（优先项 → 备用项） |
 | --- | --- | --- |
 | `unsigned` | 无签名设备编译包；不能直接安装 | 无证书 |
-| `development` | 描述文件内设备开发测试 | DEV_CERTIFICATE_P12 → BUILD_CERTIFICATE_P12；DEV_P12_PASSWORD → P12_PASSWORD；DEV_PROVISION_PROFILE → BUILD_PROVISION_PROFILE；APPLE_TEAM_ID |
-| `ad-hoc`（手动默认） | 描述文件内设备分发测试 | DIST_CERTIFICATE_P12 → BUILD_CERTIFICATE_P12；DIST_P12_PASSWORD → P12_PASSWORD；DIST_PROVISION_PROFILE → BUILD_PROVISION_PROFILE；APPLE_TEAM_ID |
+| `development`（默认） | 描述文件内设备开发测试 | DEV_CERTIFICATE_P12 → BUILD_CERTIFICATE_P12；DEV_P12_PASSWORD → P12_PASSWORD；DEV_PROVISION_PROFILE → BUILD_PROVISION_PROFILE；APPLE_TEAM_ID |
+| `ad-hoc` | 描述文件内设备分发测试 | DIST_CERTIFICATE_P12 → BUILD_CERTIFICATE_P12；DIST_P12_PASSWORD → P12_PASSWORD；DIST_PROVISION_PROFILE → BUILD_PROVISION_PROFILE；APPLE_TEAM_ID |
 | `app-store` | 后续App Store/TestFlight上传使用的签名包 | 与ad-hoc同名变量，但必须配置App Store类型描述文件 |
 
-`main`分支相关源码push自动构建`unsigned`，无需读取签名密钥；签名模式手动运行。每次运行使用独立artifact名称和7天保存期。分支并发运行会取消上一次同分支打包。未配置pull_request触发签名流程。
+`main`分支相关源码push及手动默认构建`development`，使用已有DEV证书配置。需要无签名编译检查时必须手动选择`unsigned`；不会在签名配置缺失时悄悄退回未签名包。每次运行使用独立artifact名称和7天保存期。分支并发运行会取消上一次同分支打包。未配置pull_request触发签名流程。
 
 在仓库 **Settings → Secrets and variables → Actions → Repository secrets** 保存上述证书、密码和描述文件。`APPLE_TEAM_ID`既支持同名Secret，也支持同名Repository variable，Secret优先。P12和描述文件的值必须是文件的**完整base64编码**，不是文件路径、证书文本或仓库中的文件。密码是原始密码文本。不要将真实配置写入源码或讨论日志。
 
@@ -26,7 +26,7 @@ base64 -i AdHoc.mobileprovision | pbcopy
 
 `DIST_*`只能存放一套分发描述文件：选择`app-store`前，应确认其确实为App Store描述文件，Ad Hoc描述文件不能用于App Store导出。流程不会擅自转换描述文件或下载、更新设备列表。Ad Hoc和Development必须事先在Apple Developer注册目标iPhone的UDID，并重新生成包含该设备的描述文件。
 
-App ID必须显式指定（不支持通配符）、启用HealthKit，且团队与证书一致。流程从描述文件读取Bundle ID用于打包，不写回工程；描述文件过期、Team不符、缺HealthKit或模式不匹配时直接失败。证书身份与描述文件是否可配对由Xcode实际签名验证，密码错误或证书缺私钥也会失败。
+App ID必须显式指定（不支持通配符）、启用HealthKit，且团队与证书一致。流程从描述文件读取Bundle ID用于打包，不写回工程；描述文件过期、Team不符、缺HealthKit或模式不匹配时直接失败。导出后解包实际IPA，再验证签名、HealthKit entitlement、团队、App ID及开发调试标志；`receipt.json`的`healthkit_entitlement_verified`和`exported_signature_verified`只有这些检查通过才会为true。证书身份与描述文件是否可配对由Xcode实际签名验证，密码错误或证书缺私钥也会失败。
 
 当前没有Widget target，`DEV_WIDGET_PROVISION_PROFILE`和`DIST_WIDGET_PROVISION_PROFILE`不使用。`BUILD_*`作为通用备用配置使用。`APPSTORE_API_KEY_ID`、`APPSTORE_API_PRIVATE_KEY`、`APPSTORE_ISSUER_ID`本流程不读取，因为当前只打包并导出，不自动上传Apple，也不请求自动管理证书。
 
@@ -65,3 +65,12 @@ Linux已通过actionlint v1.7.7工作流检查及打包编排和配置验证测�
 `xcodebuild test`退出65可能是断言失败，不代表应用编译失败。入口会直接打印编译错误或失败断言的上下文；若有`Tests.xcresult`，即使测试失败也会尝试提取统计和失败详情。原始日志与结果包仍由always步骤上传。实际Keychain测试保持启用，模拟器通过ad hoc签名运行，不依赖本仓库的DEV/DIST证书。
 
 推送修复提交后，在新提交上运行workflow。直接点旧失败运行的Re-run会继续使用旧源码，无法应用新修复。诊断产物在运行页面底部Artifacts，名称为`StairClimb-ipa-diagnostics-<run_id>-<attempt>`；解压后查看`xctest.log`和`test-summary.log`。
+
+
+## iPhone 真机健康功能测试
+
+2026-11-15用户确认在iPhone安装的是unsigned产物，而Development包未生成。此前push默认unsigned不会执行开发签名；现在已改为默认Development。未经签名的IPA不能直接安装；通过第三方工具安装通常会涉及重签，不能假设保留HealthKit能力。本次故障尚无实际设备错误码或安装签名检查，不能将签名缺失认定为已经证实的唯一原因。
+
+配置`DEV_CERTIFICATE_P12`、`DEV_P12_PASSWORD`、`DEV_PROVISION_PROFILE`和`APPLE_TEAM_ID`（允许上述表格中的备用变量），确保开发描述文件包含目标iPhone的UDID，并启用HealthKit。推送新代码，在新提交运行workflow。XCTest通过且导出签名检查通过后，下载`StairClimb-development-<run_id>-<attempt>`中的`StairClimb-development.ipa`，通过受支持的安装方式安装原始签名包，避免再次重签。设备可能需要在系统中开启开发者模式，以实际iOS提示为准。
+
+本次没有访问GitHub Secret值，也没有真实Development导出结果；默认模式、导出校验和测试代码完成不代表开发证书或目标设备UDID已经配置正确。如果仍未生成，查看“Build and run every XCTest”是否通过，以及“Archive and export signed IPA”的首个错误。任何上游测试失败仍会阻止签名步骤。

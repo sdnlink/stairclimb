@@ -26,3 +26,8 @@
 - [errorNoData](https://developer.apple.com/documentation/healthkit/hkerror/code/errornodata)：无匹配数据时不能计算统计结果。
 - [errorDatabaseInaccessible](https://developer.apple.com/documentation/healthkit/hkerror/code/errordatabaseinaccessible)：设备锁定导致健康数据受保护。
 - [errorHealthDataRestricted](https://developer.apple.com/documentation/healthkit/hkerror/code/errorhealthdatarestricted)：设备管理策略可限制健康访问。
+
+
+## 用户后续确认
+
+用户确认使用iPhone真机，安装unsigned产物，Development版本未生成。原push流程固定unsigned，因此不会执行开发签名；现在默认改为Development，参见[IPA构建](IPA_BUILD.md)。需在目标设备包含于描述文件、HealthKit能力齐全的前提下安装签名包重新验证。该反馈缩小了排查范围，但尚未检查设备实际安装签名，不能声称已经确定或修复该设备的全部故障原因。

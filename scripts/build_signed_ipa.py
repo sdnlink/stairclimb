@@ -86,10 +86,25 @@ def validate_profile(profile, team, mode, now=None):
     return bundle, identifier
 
 
+def validate_signed_entitlements(entitlements, profile, team, mode):
+    """A capable profile alone is insufficient: validate the final app signature."""
+    bundle, _ = validate_profile(profile, team, mode)
+    expected_identifier = profile['Entitlements']['application-identifier']
+    if entitlements.get('com.apple.developer.healthkit') is not True:
+        raise SigningFailure('Exported IPA signature is missing the HealthKit entitlement')
+    if entitlements.get('application-identifier') != expected_identifier:
+        raise SigningFailure('Exported IPA signature App ID does not match its provisioning profile')
+    if entitlements.get('com.apple.developer.team-identifier') != team:
+        raise SigningFailure('Exported IPA signature does not match APPLE_TEAM_ID')
+    if (entitlements.get('get-task-allow') is True) != (mode == 'development'):
+        raise SigningFailure('Exported IPA debug entitlement does not match the signing mode')
+    return bundle
+
+
 def build(mode, output):
     if platform.system() != 'Darwin':
         raise SigningFailure('Signed IPA compilation requires macOS with full Xcode 16+')
-    for tool in ['xcodebuild', 'security', 'xcrun']:
+    for tool in ['xcodebuild', 'security', 'xcrun', 'codesign', 'ditto']:
         if not shutil.which(tool):
             raise SigningFailure('Missing Apple tool: ' + tool)
     output = Path(output).resolve()
@@ -191,7 +206,26 @@ def build(mode, output):
             ipas=list(package_directory.glob('*.ipa'))
             if len(ipas)!=1:
                 raise SigningFailure('Export must produce exactly one IPA')
-            run('codesign-verify',['codesign','--verify','--deep','--strict',str(archive/'Products/Applications/StairClimb.app')])
+            # Validate what will actually be installed, after Xcode export has
+            # selected/re-signed the profile, rather than checking only the archive.
+            exported = temp/'exported-app'
+            private(['ditto','-x','-k',str(ipas[0]),str(exported)],'Inspect exported IPA')
+            applications = list((exported/'Payload').glob('*.app'))
+            if len(applications) != 1:
+                raise SigningFailure('Exported IPA must contain exactly one application')
+            application = applications[0]
+            run('codesign-verify',['codesign','--verify','--deep','--strict',str(application)])
+            entitlements = plistlib.loads(private(['codesign','-d','--entitlements',':-',str(application)],
+                                                  'Read exported application entitlements'))
+            exported_profile = plistlib.loads(private(['security','cms','-D','-i',str(application/'embedded.mobileprovision')],
+                                                      'Read exported provisioning profile'))
+            if validate_signed_entitlements(entitlements,exported_profile,team,mode) != bundle:
+                raise SigningFailure('Exported IPA bundle does not match the archive')
+            with (application/'Info.plist').open('rb') as stream:
+                exported_info = plistlib.load(stream)
+            if exported_info.get('CFBundleIdentifier') != bundle:
+                raise SigningFailure('Exported IPA Info.plist does not match its signing identity')
+            receipt.update(healthkit_entitlement_verified=True, exported_signature_verified=True)
             target = output/('StairClimb-'+mode+'.ipa')
             shutil.copyfile(ipas[0],target)
             digest=hashlib.sha256(target.read_bytes()).hexdigest()

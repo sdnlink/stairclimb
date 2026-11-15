@@ -53,7 +53,7 @@ Rust直接提供TLS1.2/1.3：两项证书路径必须同时配置，非法配置
 
 ## IPA 打包
 
-GitHub Actions 新增 **Build iOS IPA**：手动选择 Development、Ad Hoc、App Store 或 unsigned；沿用现有 `APPLE_TEAM_ID`、`DEV_*`、`DIST_*` 和 `BUILD_*` / `P12_PASSWORD` 配置。全部 XCTest 通过后编译并导出 IPA，上传产物和日志，不自动上传 Apple。配置方法、下载安装范围与变量对应见[IPA 打包说明](docs/IPA_BUILD.md)。未签名 IPA 不能直接安装。
+GitHub Actions 新增 **Build iOS IPA**：默认构建 Development，手动可选择 Ad Hoc、App Store 或 unsigned；沿用现有 `APPLE_TEAM_ID`、`DEV_*`、`DIST_*` 和 `BUILD_*` / `P12_PASSWORD` 配置。全部 XCTest 通过后编译并导出 IPA，上传产物和日志，不自动上传 Apple。配置方法、下载安装范围与变量对应见[IPA 打包说明](docs/IPA_BUILD.md)。未签名 IPA 不能直接安装。
 
 ## 验证
 

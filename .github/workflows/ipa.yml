@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       signing:
-        description: 'IPA signing mode (Ad Hoc requires registered devices)'
+        description: 'Development for iPhone testing; registered device and HealthKit profile required'
         type: choice
-        default: ad-hoc
+        default: development
         options:
-          - unsigned
           - development
+          - unsigned
           - ad-hoc
           - app-store
   push:
@@ -36,7 +36,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 50
     env:
-      IPA_MODE: ${{ inputs.signing || 'unsigned' }}
+      IPA_MODE: ${{ inputs.signing || 'development' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,8 +93,9 @@ jobs:
         if: success()
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
-          爬楼梯 IPA 已构建，下载本次运行的 StairClimb artifact；签名模式见产物名称和 receipt.json。
+          爬楼梯 IPA 已构建，下载与本次签名模式对应的 StairClimb artifact；签名模式见产物名称和 receipt.json。
           产物包含 IPA、SHA-256 和构建记录；诊断日志与 XCTest 结果另存7天。
-          未签名 IPA 不能直接安装；Development/Ad Hoc 仅支持描述文件内设备。
+          iPhone 健康功能测试请使用 development 或 ad-hoc 包，目标设备须包含在启用 HealthKit 的描述文件内。
+          unsigned 只供编译检查，不能直接安装；第三方重新签名可能丢失 HealthKit 权限。
           App Store IPA 用于后续分发，此流程未上传 App Store 或 TestFlight。
           SUMMARY
