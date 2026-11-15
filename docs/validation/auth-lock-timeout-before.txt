@@ -1,0 +1,99 @@
+test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) ... 
+  test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='login') ... FAIL
+  test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='refresh') ... FAIL
+  test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='logout') ... FAIL
+  test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='logout-all') ... FAIL
+test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) ... 
+  test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) (action='verify') ... FAIL
+  test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) (action='reset-password') ... FAIL
+test_independent_registration_user_lock_timeout_preserves_both_identities (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_user_lock_timeout_preserves_both_identities) ... FAIL
+test_user_deleted_while_auth_waits_keeps_credential_error (backend.tests.test_email_auth.EmailAuthTests.test_user_deleted_while_auth_waits_keeps_credential_error) ... ok
+
+======================================================================
+FAIL: test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='login')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 323, in test_session_user_lock_timeouts_preserve_credentials_for_retry
+    self.assert_auth_user_lock_timeout(user_id, action, body, session['token'])
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 401 != 503
+
+======================================================================
+FAIL: test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='refresh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 323, in test_session_user_lock_timeouts_preserve_credentials_for_retry
+    self.assert_auth_user_lock_timeout(user_id, action, body, session['token'])
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 401 != 503
+
+======================================================================
+FAIL: test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='logout')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 323, in test_session_user_lock_timeouts_preserve_credentials_for_retry
+    self.assert_auth_user_lock_timeout(user_id, action, body, session['token'])
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 401 != 503
+
+======================================================================
+FAIL: test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) (action='logout-all')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 323, in test_session_user_lock_timeouts_preserve_credentials_for_retry
+    self.assert_auth_user_lock_timeout(user_id, action, body, session['token'])
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 401 != 503
+
+======================================================================
+FAIL: test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) (action='verify')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 351, in test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof
+    self.assert_auth_user_lock_timeout(user_id, action, body)
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 400 != 503
+
+======================================================================
+FAIL: test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) (action='reset-password')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 351, in test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof
+    self.assert_auth_user_lock_timeout(user_id, action, body)
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 400 != 503
+
+======================================================================
+FAIL: test_independent_registration_user_lock_timeout_preserves_both_identities (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_user_lock_timeout_preserves_both_identities)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 370, in test_independent_registration_user_lock_timeout_preserves_both_identities
+    self.assert_auth_user_lock_timeout(user_id, 'register-independent', body)
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 311, in assert_auth_user_lock_timeout
+    self.error(future.result(timeout=12), 503, 'storage_unavailable')
+  File "/home/skn/code/stairclimb/backend/tests/test_email_auth.py", line 55, in error
+    self.assertEqual(response[0], status)
+AssertionError: 400 != 503
+
+----------------------------------------------------------------------
+Ran 4 tests in 47.645s
+
+FAILED (failures=7)

@@ -4,7 +4,7 @@
 
 当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行，最终集成交付尚未完成。
 
-邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。本轮仅交审`ios_circles`，保留已接受的邮箱与联网模块。后续性能/Swift时间标记/Mac构建入口及最终集成交付继续必交，不以本模块交审替代全需求完成。
+邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。本轮交审`backend_data_access`：连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)，保留已接受的圈子、邮箱与联网模块。后续Swift时间标记/Mac构建入口及最终集成交付继续必交，不以本模块交审替代全需求完成。
 
 ## 本地启动
 
@@ -24,6 +24,8 @@ sh scripts/run_backend.sh
 启动脚本先执行 `cargo build --locked --manifest-path backend/Cargo.toml --bin stairclimb-server`，再 `exec backend/target/debug/stairclimb-server`。加载上述TLS配置后默认 `https://127.0.0.1:8443`，前台 Ctrl-C 停止。未加载TLS的内部测试HTTP仍默认 `127.0.0.1:8787`。端口可用 `sh scripts/run_backend.sh --port 8788`，或设置 `STAIRCLIMB_HOST` / `STAIRCLIMB_PORT`。`DATABASE_URL` 必须配置。连接串不出现在启动日志中。首次启动以事务及迁移锁应用 [版本化迁移](backend/migrations/001_initial.sql)，空库可直接启动，重启保留数据。
 
 外部自备 PostgreSQL 时可复制 [无密钥配置示例](backend/development.env.example) 到被忽略的 `.env`，填写自己的 `DATABASE_URL` 后 `. ./.env` 再启动；示例所有变量均显式export，`CHANGE_ME`不是可用凭证。当前默认本地连接不使用数据库 TLS；远程数据库须自行配置可信 TLS 通道，本任务不部署公网服务。
+
+数据库连接池默认最多8个连接（含正在创建），获取等待1500ms；可用示例中的`STAIRCLIMB_DB_POOL_MAX`和`STAIRCLIMB_DB_POOL_TIMEOUT_MS`调整。池耗尽返回503 `database_busy`，连接归还后恢复；详细锁顺序、迁移003、分页和真实规模实验见[数据库访问说明](docs/DATA_ACCESS.md)。
 
 ```sh
 curl --fail --silent --cacert .runtime/tls/ca.pem https://127.0.0.1:8443/health
@@ -127,7 +129,7 @@ python3 scripts/verify_ios_api.py
 
 已有匿名Keychain记录兼容保留，通过“绑定旧身份邮箱”发送验证邮件，验证/重置同时使用该设备原凭证。成功后登录原账号，保留原ID、昵称、历史和同意状态；本机停传状态不会被绑定或登录自动打开。若邮箱被他人未验证的旧绑定占用，可申请找回邮件，再主动选择“建立独立账号”；不合并或获取旧身份。切换到另一个账号前须处理原账号数据，再明确移除此机凭证。
 
-当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令不能作为已经通过的证据。Swift成功时间/缓存体验、Mac构建入口、数据库访问优化、最终集成和持续后端实例仍由后续模块完成，整体需求尚未完成。
+当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令不能作为已经通过的证据。Swift成功时间/缓存体验、Mac构建入口、最终集成和持续后端实例仍由后续模块完成，整体需求尚未完成。
 
 监督流程已由外部 Auto Moniter 启动，worker 不修改监督器源码、不提交或暂存 Git。独立 reviewer 和 Watcher 的复核结果由监督流程记录，本 README 不冒称它们已接受实现。
 

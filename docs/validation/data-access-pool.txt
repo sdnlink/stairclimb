@@ -1,0 +1,20 @@
+   Compiling stairclimb v0.1.0 (/home/skn/code/stairclimb/backend)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.25s
+     Running unittests src/lib.rs (backend/target/debug/deps/stairclimb-533365bd1fbdfbff)
+
+running 2 tests
+test storage::pool_tests::postgres_pool_waiter_receives_returned_lease_without_exceeding_limit ... ok
+
+thread 'storage::pool_tests::postgres_pool_bounds_timeout_reuse_rollback_and_broken_connection' (918333) panicked at src/storage.rs:909:13:
+assertion failed: Instant::now() < deadline
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test storage::pool_tests::postgres_pool_bounds_timeout_reuse_rollback_and_broken_connection ... FAILED
+
+failures:
+
+failures:
+    storage::pool_tests::postgres_pool_bounds_timeout_reuse_rollback_and_broken_connection
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 2.67s
+
+error: test failed, to rerun pass `--lib`

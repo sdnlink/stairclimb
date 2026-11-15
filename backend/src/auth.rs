@@ -116,6 +116,38 @@ fn dummy_hash() -> &'static str {
 fn accepted() -> Value {
     json!({"message":"若请求适用于账号，一次性邮件已提交给邮件服务器；请检查收件箱。此响应不表示邮箱已验证。"})
 }
+// Registration serializes one email only, then users in sorted order. All other
+// authentication writers lock their user before touching proofs/sessions.
+fn lock_email(tx: &mut impl GenericClient, email: &str) -> Result<()> {
+    tx.query_one(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        &[&digest(email)],
+    )?;
+    Ok(())
+}
+fn lock_auth_user(tx: &mut impl GenericClient, id: &str, missing: fn() -> ApiError) -> Result<()> {
+    crate::storage::lock_user(tx, id).map_err(|error| {
+        // Only an absent user is a credential failure. Preserve database errors
+        // so a lock timeout does not tell clients to discard valid credentials.
+        if error.status == 401 && error.code == "unauthorized" {
+            missing()
+        } else {
+            error
+        }
+    })
+}
+fn lock_proof_user(
+    tx: &mut impl GenericClient,
+    token: &str,
+    purpose: &str,
+    independent: bool,
+) -> Result<()> {
+    let row = tx.query_opt("SELECT c.user_id,a.email FROM email_credentials c JOIN email_accounts a ON a.user_id=c.user_id WHERE c.digest=$1 AND c.purpose=$2", &[&digest(token), &purpose])?.ok_or_else(invalid_proof)?;
+    if independent {
+        lock_email(tx, &row.get::<_, String>("email"))?;
+    }
+    lock_auth_user(tx, &row.get::<_, String>("user_id"), invalid_proof)
+}
 fn revoke_all(tx: &mut impl GenericClient, id: &str) -> Result<()> {
     tx.execute("DELETE FROM sessions WHERE user_id=$1", &[&id])?;
     Ok(())
@@ -224,6 +256,7 @@ impl Application {
                 };
                 let mut db = self.connect()?;
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                lock_email(&mut tx, &email)?;
                 let existing = tx.query_opt(
                     "SELECT user_id,verified FROM email_accounts WHERE email=$1",
                     &[&email],
@@ -235,6 +268,27 @@ impl Application {
                 } else {
                     None
                 };
+                let mut ids: Vec<String> = existing
+                    .as_ref()
+                    .map(|r| r.get("user_id"))
+                    .into_iter()
+                    .chain(binding.clone())
+                    .collect();
+                ids.sort();
+                ids.dedup();
+                for id in ids {
+                    crate::storage::lock_user(&mut tx, &id)?;
+                }
+                // Re-read after waiting for deletion, verify, or another binding.
+                let existing = tx.query_opt(
+                    "SELECT user_id,verified FROM email_accounts WHERE email=$1",
+                    &[&email],
+                )?;
+                if let Some(id) = &binding {
+                    if tx.query_opt("SELECT u.id FROM users u LEFT JOIN email_accounts a ON a.user_id=u.id WHERE u.id=$1 AND (a.user_id IS NULL OR (a.legacy_binding AND NOT a.verified))", &[id])?.is_none() {
+                        return Err(ApiError::new(401,"unauthorized","绑定需要原设备有效身份凭证"));
+                    }
+                }
                 let mut target = None;
                 if existing.is_none() && (action == "register" || action == "bind") {
                     let id = binding
@@ -286,6 +340,7 @@ impl Application {
                 let hash = hash_password(password(&body["password"])?)?;
                 let mut db = self.connect()?;
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                lock_proof_user(&mut tx, &token, "reset", true)?;
                 let row = tx.query_opt(
                     "SELECT c.user_id,c.expires_at,a.email,a.verified,a.legacy_binding FROM email_credentials c JOIN email_accounts a ON a.user_id=c.user_id WHERE c.digest=$1 AND c.purpose='reset'",
                     &[&digest(&token)],
@@ -343,6 +398,7 @@ impl Application {
                 };
                 let mut db = self.connect()?;
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                lock_proof_user(&mut tx, &token, purpose, false)?;
                 let row = tx.query_opt("SELECT c.user_id,c.expires_at,a.password_hash,a.legacy_binding,a.verified FROM email_credentials c JOIN email_accounts a ON a.user_id=c.user_id WHERE c.digest=$1 AND c.purpose=$2", &[&digest(&token),&purpose])?.ok_or_else(invalid_proof)?;
                 if row.get::<_, i64>("expires_at") <= self.clock.now()?.timestamp() {
                     return Err(invalid_proof());
@@ -428,11 +484,12 @@ impl Application {
                 }
                 let id: String = row.unwrap().get("user_id");
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                lock_auth_user(&mut tx, &id, unauthorized)?;
                 // Password may have changed while Argon2 was running; recheck under write lock.
                 if tx.query_opt("SELECT user_id FROM email_accounts WHERE user_id=$1 AND password_hash=$2 AND verified", &[&id,&hash.unwrap()])?.is_none() { return Err(unauthorized()); }
                 tx.execute(
-                    "DELETE FROM sessions WHERE refresh_expires_at <= $1",
-                    &[&self.clock.now()?.timestamp()],
+                    "DELETE FROM sessions WHERE refresh_expires_at <= $1 AND user_id=$2",
+                    &[&self.clock.now()?.timestamp(), &id],
                 )?;
                 let session = issue_session(&mut tx, &id, self.clock.now()?.timestamp())?;
                 tx.commit()?;
@@ -448,6 +505,13 @@ impl Application {
                 let token = proof(body, "refresh_token")?;
                 let mut db = self.connect()?;
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                let candidate = tx
+                    .query_opt(
+                        "SELECT user_id FROM sessions WHERE refresh_hash=$1",
+                        &[&digest(&token)],
+                    )?
+                    .ok_or_else(unauthorized)?;
+                lock_auth_user(&mut tx, &candidate.get::<_, String>(0), unauthorized)?;
                 let now = self.clock.now()?.timestamp();
                 let row = tx.query_opt("DELETE FROM sessions WHERE refresh_hash=$1 AND refresh_expires_at>$2 RETURNING user_id", &[&digest(&token),&now])?.ok_or_else(unauthorized)?;
                 let id: String = row.get(0);
@@ -461,6 +525,13 @@ impl Application {
                 self.auth_limit(action, source, token)?;
                 let mut db = self.connect()?;
                 let mut tx = crate::storage::begin(&mut db, true)?;
+                let candidate = tx
+                    .query_opt(
+                        "SELECT user_id FROM sessions WHERE access_hash=$1",
+                        &[&digest(token)],
+                    )?
+                    .ok_or_else(unauthorized)?;
+                lock_auth_user(&mut tx, &candidate.get::<_, String>(0), unauthorized)?;
                 // Expired access may still terminate its own unexpired refresh session.
                 let row = tx.query_opt("SELECT user_id FROM sessions WHERE access_hash=$1 AND refresh_expires_at>$2", &[&digest(token),&self.clock.now()?.timestamp()])?.ok_or_else(unauthorized)?;
                 if action == "logout-all" {

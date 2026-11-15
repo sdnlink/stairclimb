@@ -1,0 +1,16 @@
+   Compiling stairclimb v0.1.0 (/home/skn/code/stairclimb/backend)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running unittests src/lib.rs (backend/target/debug/deps/stairclimb-533365bd1fbdfbff)
+
+running 2 tests
+test storage::pool_tests::postgres_pool_waiter_receives_returned_lease_without_exceeding_limit ... ok
+test storage::pool_tests::postgres_pool_bounds_timeout_reuse_rollback_and_broken_connection ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 1.08s
+
+     Running unittests src/main.rs (backend/target/debug/deps/stairclimb_server-b400798ca062738d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,9 @@
+test_session_user_lock_timeouts_preserve_credentials_for_retry (backend.tests.test_email_auth.EmailAuthTests.test_session_user_lock_timeouts_preserve_credentials_for_retry) ... ok
+test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof (backend.tests.test_email_auth.EmailAuthTests.test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof) ... ok
+test_independent_registration_user_lock_timeout_preserves_both_identities (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_user_lock_timeout_preserves_both_identities) ... ok
+test_user_deleted_while_auth_waits_keeps_credential_error (backend.tests.test_email_auth.EmailAuthTests.test_user_deleted_while_auth_waits_keeps_credential_error) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 56.393s
+
+OK

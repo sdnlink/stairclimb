@@ -74,16 +74,17 @@ class Database:
             self.execute('ALTER TABLE users_offline RENAME TO users')
 
     @contextmanager
-    def write_lock(self):
+    def write_lock(self, user_id=None):
         command = ['docker', 'exec', '-i', '-u', 'postgres', pg.NAME, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-d', 'stairclimb']
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-        process.stdin.write('SET search_path TO ' + self.schema + "; BEGIN; SELECT value FROM metadata WHERE key='leaderboard_revision' FOR UPDATE;\n\\echo LOCKED\n")
+        target = "SELECT value FROM metadata WHERE key='leaderboard_revision' FOR UPDATE" if user_id is None else "SELECT id FROM users WHERE id='" + str(user_id).replace("'", "''") + "' FOR UPDATE"
+        process.stdin.write('SET search_path TO ' + self.schema + "; BEGIN; " + target + ";\n\\echo LOCKED\n")
         process.stdin.flush()
         while process.stdout.readline().strip() != 'LOCKED':
             if process.poll() is not None:
                 raise RuntimeError('Could not acquire actual PostgreSQL transaction lock')
         try:
-            yield
+            yield process
         finally:
             process.stdin.write('COMMIT;\n\\q\n')
             process.stdin.flush()
@@ -105,7 +106,7 @@ class Database:
 
 
 class RustServer:
-    def __init__(self, database, clock, *, email_only=False, mail_environment=None, production=False, tls_environment=None):
+    def __init__(self, database, clock, *, email_only=False, mail_environment=None, production=False, tls_environment=None, binary=None, pool_environment=None):
         self.database = database
         self.clock = clock
         self.temporary = tempfile.TemporaryDirectory(prefix='stairclimb-rust-http-')
@@ -117,16 +118,17 @@ class RustServer:
         self.log = self.log_path.open('w')
         environment = dict(os.environ, DATABASE_URL=database.url)
         for key in list(environment):
-            if key.startswith('SMTP_') or key.startswith('STAIRCLIMB_TLS_'):
+            if key.startswith('SMTP_') or key.startswith('STAIRCLIMB_TLS_') or key.startswith('STAIRCLIMB_DB_POOL_'):
                 environment.pop(key)
         environment.update(mail_environment or {})
         environment.update(tls_environment or {})
+        environment.update(pool_environment or {})
         # application_name lets tests observe actual row lock waits without HTTP test controls.
         from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
         parts = urlsplit(database.url)
         query = dict(parse_qsl(parts.query), application_name=database.schema)
         environment['DATABASE_URL'] = urlunsplit(parts._replace(query=urlencode(query)))
-        self.process = subprocess.Popen([str(ROOT/('backend/target/debug/stairclimb-server' if production else 'backend/target/debug/stairclimb-test-server')),
+        self.process = subprocess.Popen([str(binary.resolve() if binary else ROOT/('backend/target/debug/stairclimb-server' if production else 'backend/target/debug/stairclimb-test-server')),
                                          '--host', '127.0.0.1', '--port', '0',
                                          *([] if production else ['--clock-file', str(self.clock_file)]),
                                          *(['--email-only', 'true'] if email_only and not production else [])],

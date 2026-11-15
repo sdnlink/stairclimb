@@ -381,12 +381,17 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
         return Err("HTTP listener must be a literal loopback address".into());
     }
     let database_url = std::env::var("DATABASE_URL")?;
-    let mut app = Application::new(database_url, clock).map_err(|_| "database unavailable")?;
+    let mut app = Application::with_pool(
+        database_url,
+        clock,
+        crate::pool::PoolConfig::from_env().map_err(|_| "invalid database pool configuration")?,
+    )
+    .map_err(|_| "database unavailable")?;
     // Only the test binary can use anonymous regression fixtures. Production never opts in.
     app.legacy_test_mode = test_mode && !email_only;
     let app = Arc::new(app);
     let listener = TcpListener::bind((host.as_str(), port.parse::<u16>()?))?;
-    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=2; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
+    println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=3; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
     std::io::stdout().flush()?;
     let active = Arc::new(AtomicUsize::new(0));
     for socket in listener.incoming() {

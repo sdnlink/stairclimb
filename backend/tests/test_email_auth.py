@@ -293,14 +293,107 @@ class EmailAuthTests(unittest.TestCase):
     def test_waiting_write_rechecks_session_after_logout(self):
         session = self.verified()
         token = session['token']
-        # Revoke while a request is blocked on the real metadata write barrier.
+        # Revoke while a request is blocked on its actual PostgreSQL user row.
         with ThreadPoolExecutor(max_workers=1) as pool:
-            with self.database.write_lock():
+            with self.database.write_lock(session["user"]["id"]):
                 future = pool.submit(self.request, 'PATCH', '/v1/me', {'nickname': '不应写入'}, token)
                 self.database.wait_for_blocked_writer()
                 self.database.execute('DELETE FROM sessions')
             self.error(future.result(), 401, 'unauthorized')
         self.assertEqual(self.database.execute('SELECT nickname FROM users').fetchone()[0], '小楼')
+
+    def assert_auth_user_lock_timeout(self, user_id, action, body, token=None):
+        # Hold the real row until PostgreSQL's production 4000ms lock timeout fires.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with self.database.write_lock(user_id):
+                future = pool.submit(self.post, action, body, token)
+                self.database.wait_for_blocked_writer()
+                self.error(future.result(timeout=12), 503, 'storage_unavailable')
+
+    def test_session_user_lock_timeouts_preserve_credentials_for_retry(self):
+        for action in ['login', 'refresh', 'logout', 'logout-all']:
+            with self.subTest(action=action):
+                email = 'lock-' + action + '@example.test'
+                session = self.verified(email)
+                other = self.login(email) if action == 'logout-all' else None
+                user_id = session['user']['id']
+                body = {'email': email, 'password': PASSWORD} if action == 'login' else (
+                    {'refresh_token': session['refresh_token']} if action == 'refresh' else {})
+                count = self.database.execute('SELECT COUNT(*) FROM sessions WHERE user_id=?', (user_id,)).fetchone()[0]
+                self.assert_auth_user_lock_timeout(user_id, action, body, session['token'])
+                self.assertEqual(self.database.execute('SELECT COUNT(*) FROM sessions WHERE user_id=?', (user_id,)).fetchone()[0], count)
+                self.assertEqual(self.request('GET', '/v1/me', token=session['token'])[0], 200)
+                if other:
+                    self.assertEqual(self.request('GET', '/v1/me', token=other['token'])[0], 200)
+                # Reuse the same password, refresh proof or access token after release.
+                status, result = self.post(action, body, session['token'])
+                self.assertEqual(status, 200)
+                if action in ['login', 'refresh']:
+                    self.assertEqual(self.request('GET', '/v1/me', token=result['token'])[0], 200)
+                if action != 'login':
+                    self.error(self.request('GET', '/v1/me', token=session['token']), 401, 'unauthorized')
+                if other:
+                    self.error(self.request('GET', '/v1/me', token=other['token']), 401, 'unauthorized')
+
+    def test_mail_proof_user_lock_timeouts_do_not_consume_or_activate_proof(self):
+        for action in ['verify', 'reset-password']:
+            with self.subTest(action=action):
+                email = 'lock-' + action + '@example.test'
+                session = None
+                if action == 'verify':
+                    proof = self.register(email)
+                else:
+                    session = self.verified(email)
+                    self.assertEqual(self.post('forgot-password', {'email': email})[0], 202)
+                    proof = self.capture.token()
+                user_id = self.database.execute('SELECT user_id FROM email_accounts WHERE email=?', (email,)).fetchone()[0]
+                body = {'token': proof, 'password': PASSWORD if action == 'verify' else NEW_PASSWORD}
+                self.assert_auth_user_lock_timeout(user_id, action, body)
+                self.assertEqual(self.database.execute('SELECT COUNT(*) FROM email_credentials WHERE digest=?', (hashlib.sha256(proof.encode()).hexdigest(),)).fetchone()[0], 1)
+                self.assertEqual(self.database.execute('SELECT verified FROM email_accounts WHERE user_id=?', (user_id,)).fetchone()[0], action != 'verify')
+                if session:
+                    self.assertEqual(self.request('GET', '/v1/me', token=session['token'])[0], 200)
+                    self.login(email)  # The timed-out reset did not change the password.
+                self.assertEqual(self.post(action, body)[0], 200)
+                self.error(self.post(action, body), 400, 'invalid_credential')
+                self.login(email, body['password'])
+                if session:
+                    self.error(self.request('GET', '/v1/me', token=session['token']), 401, 'unauthorized')
+
+    def test_independent_registration_user_lock_timeout_preserves_both_identities(self):
+        legacy, _ = self.pending_legacy_binding()
+        user_id = legacy['user']['id']
+        before = self.legacy_snapshot(user_id)
+        self.assertEqual(self.post('forgot-password', {'email': 'owner@example.test'})[0], 202)
+        proof = self.capture.token()
+        body = {'token': proof, 'password': NEW_PASSWORD, 'nickname': '邮箱主人'}
+        self.assert_auth_user_lock_timeout(user_id, 'register-independent', body)
+        self.assertEqual(self.legacy_snapshot(user_id), before)
+        self.assertEqual(self.database.execute('SELECT COUNT(*) FROM users').fetchone()[0], 1)
+        self.assertEqual(self.database.execute('SELECT COUNT(*) FROM email_credentials WHERE digest=?', (hashlib.sha256(proof.encode()).hexdigest(),)).fetchone()[0], 1)
+        self.assertEqual(self.post('register-independent', body)[0], 200)
+        self.assertNotEqual(self.login('owner@example.test', NEW_PASSWORD)['user']['id'], user_id)
+        self.assertEqual(self.legacy_snapshot(user_id), before)
+        self.error(self.post('register-independent', body), 400, 'invalid_credential')
+
+    def test_user_deleted_while_auth_waits_keeps_credential_error(self):
+        for action in ['verify', 'refresh']:
+            with self.subTest(action=action):
+                email = 'deleted-' + action + '@example.test'
+                if action == 'verify':
+                    body = {'token': self.register(email), 'password': PASSWORD}
+                else:
+                    body = {'refresh_token': self.verified(email)['refresh_token']}
+                user_id = self.database.execute('SELECT user_id FROM email_accounts WHERE email=?', (email,)).fetchone()[0]
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    with self.database.write_lock(user_id) as blocker:
+                        future = pool.submit(self.post, action, body)
+                        self.database.wait_for_blocked_writer()
+                        blocker.stdin.write("DELETE FROM users WHERE id='" + user_id + "';\n")
+                        blocker.stdin.flush()
+                    self.error(future.result(timeout=12), 400 if action == 'verify' else 401,
+                               'invalid_credential' if action == 'verify' else 'authentication_failed')
+                self.assertEqual(self.database.execute('SELECT COUNT(*) FROM email_accounts WHERE user_id=?', (user_id,)).fetchone()[0], 0)
 
     def test_production_binary_disables_legacy_and_external_http_listener(self):
         self.server.close()

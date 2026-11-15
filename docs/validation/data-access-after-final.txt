@@ -1,0 +1,27 @@
+{
+  "users": 10000,
+  "binary_sha256": "3ffe9791ad6f7fe9fd71fcbd67b5d64997a489cd841a84bf5c620f37f90e5b77",
+  "measurements": {
+    "/v1/leaderboard?limit=20": {
+      "requests": 12,
+      "median_ms": 184.205,
+      "max_ms": 229.296
+    },
+    "/v1/circles/current/members?limit=20": {
+      "requests": 12,
+      "median_ms": 324.031,
+      "max_ms": 365.182
+    },
+    "concurrent_read": {
+      "workers": 8,
+      "requests": 32,
+      "median_ms": 414.395,
+      "max_ms": 538.53
+    }
+  },
+  "noop_write_during_revision_lock_completed_within_350ms": true,
+  "noop_write_ms": 11.241,
+  "server_rss_after_workload": "VmRSS:\t   14632 kB",
+  "idle_database_connections": 8,
+  "limits": "debug binary; same host; synthetic equal steps; no throughput claim; RSS includes allocator retention"
+}

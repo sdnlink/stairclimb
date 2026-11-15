@@ -2,7 +2,7 @@
 use crate::domain::*;
 use crate::{ApiError, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use postgres::{Client, GenericClient, IsolationLevel, NoTls, Row, Transaction};
+use postgres::{Client, GenericClient, IsolationLevel, Row, Transaction};
 use rand::RngCore;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -12,6 +12,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct Application {
     pub database_url: String,
+    pool: crate::pool::Pool,
     pub clock: Clock,
     pub(crate) legacy_test_mode: bool,
 }
@@ -72,6 +73,24 @@ pub(crate) fn authenticate(
     Err(invalid)
 }
 
+/// Lock users before their auth/session/consent child rows; the public version is last.
+pub(crate) fn lock_user(db: &mut impl GenericClient, id: &str) -> Result<()> {
+    db.query_opt("SELECT id FROM users WHERE id=$1 FOR UPDATE", &[&id])?
+        .ok_or_else(|| ApiError::new(401, "unauthorized", "身份凭证无效，请重新登录"))?;
+    Ok(())
+}
+fn authenticate_write(
+    db: &mut impl GenericClient,
+    authorization: Option<&str>,
+    clock: &Clock,
+    legacy: bool,
+) -> Result<User> {
+    let candidate = authenticate(db, authorization, clock.now()?.timestamp(), legacy)?;
+    lock_user(db, &candidate.id)?;
+    // Fresh READ COMMITTED statement after waiting: revoked sessions/consent cannot survive.
+    authenticate(db, authorization, clock.now()?.timestamp(), legacy)
+}
+
 fn invalidate(db: &mut impl GenericClient) -> Result<()> {
     db.execute(
         "UPDATE metadata SET value=value+1 WHERE key='leaderboard_revision'",
@@ -94,19 +113,19 @@ pub(crate) fn begin(db: &mut Client, write: bool) -> Result<Transaction<'_>> {
             .start()?
     };
     tx.batch_execute("SET LOCAL statement_timeout='5000ms'; SET LOCAL lock_timeout='4000ms'")?;
-    // One deterministic lock order across every writer prevents privacy/write races.
-    // Read-only repeatable-read transactions observe one committed snapshot.
-    if write {
-        tx.query_one(
-            "SELECT value FROM metadata WHERE key='leaderboard_revision' FOR UPDATE",
-            &[],
-        )?;
-    }
     Ok(tx)
 }
 impl Application {
     pub fn new(database_url: String, clock: Clock) -> Result<Self> {
+        Self::with_pool(database_url, clock, crate::pool::PoolConfig::default())
+    }
+    pub fn with_pool(
+        database_url: String,
+        clock: Clock,
+        config: crate::pool::PoolConfig,
+    ) -> Result<Self> {
         let app = Self {
+            pool: crate::pool::Pool::new(&database_url, config)?,
             database_url,
             clock,
             legacy_test_mode: cfg!(test),
@@ -114,8 +133,8 @@ impl Application {
         app.migrate()?;
         Ok(app)
     }
-    pub fn connect(&self) -> Result<Client> {
-        Ok(Client::connect(&self.database_url, NoTls)?)
+    pub fn connect(&self) -> Result<crate::pool::Lease> {
+        self.pool.get()
     }
     pub fn migrate(&self) -> Result<()> {
         let mut db = self.connect()?;
@@ -123,6 +142,7 @@ impl Application {
         tx.query_one("SELECT pg_advisory_xact_lock(72815291)", &[])?;
         tx.batch_execute(include_str!("../migrations/001_initial.sql"))?;
         tx.batch_execute(include_str!("../migrations/002_email_auth.sql"))?;
+        tx.batch_execute(include_str!("../migrations/003_data_access.sql"))?;
         tx.commit()?;
         Ok(())
     }
@@ -191,7 +211,7 @@ impl Application {
         if method == "GET" && path == "/v1/me" {
             let mut db = self.connect()?;
             let user = authenticate(
-                &mut db,
+                &mut *db,
                 authorization,
                 self.clock.now()?.timestamp(),
                 legacy_ok,
@@ -203,12 +223,7 @@ impl Application {
             let name = nickname(&body["nickname"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(
-                &mut tx,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
+            let user = authenticate_write(&mut tx, authorization, &self.clock, legacy_ok)?;
             if user.nickname != name {
                 tx.execute(
                     "UPDATE users SET nickname=$1 WHERE id=$2",
@@ -230,12 +245,7 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(
-                &mut tx,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
+            let user = authenticate_write(&mut tx, authorization, &self.clock, legacy_ok)?;
             user.consent(expected, false)?;
             if !enabled || user.sharing != enabled {
                 tx.execute("UPDATE users SET sharing_enabled=$1,consent_revision=consent_revision+1 WHERE id=$2",&[&(enabled as i16),&user.id])?;
@@ -257,12 +267,7 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(
-                &mut tx,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
+            let user = authenticate_write(&mut tx, authorization, &self.clock, legacy_ok)?;
             user.consent(expected, true)?;
             // Re-sample only after PostgreSQL has granted the write lock.
             let now = self.clock.now()?;
@@ -280,6 +285,7 @@ impl Application {
                 invalidate(&mut tx)?;
                 updated
             };
+            current_date(&body["date"], &day_context(self.clock.now()?))?;
             tx.commit()?;
             return Ok((
                 200,
@@ -322,12 +328,7 @@ impl Application {
             let expected = revision(&body["expected_revision"])?;
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
-            let user = authenticate(
-                &mut tx,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
+            let user = authenticate_write(&mut tx, authorization, &self.clock, legacy_ok)?;
             user.consent(expected, false)?;
             let result = if path.ends_with("/steps") {
                 let deleted =
@@ -363,12 +364,16 @@ impl Application {
             };
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, update)?;
-            let user = authenticate(
-                &mut tx,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
+            let user = if update {
+                authenticate_write(&mut tx, authorization, &self.clock, legacy_ok)?
+            } else {
+                authenticate(
+                    &mut tx,
+                    authorization,
+                    self.clock.now()?.timestamp(),
+                    legacy_ok,
+                )?
+            };
             let stored = tx.query_opt(
                 "SELECT enabled FROM circle_participation WHERE user_id=$1",
                 &[&user.id],
@@ -470,7 +475,7 @@ impl Application {
             return Err(ApiError::new(409, changed, "日期或成员已变化，请刷新"));
         }
         let mut common = merge(json!({"snapshot":snapshot,"limit":limit}), context.clone());
-        let (rows, channel) = if is_circle {
+        let channel = if is_circle {
             common["consent_revision"] = json!(viewer.revision);
             let opted = tx
                 .query_opt(
@@ -500,17 +505,32 @@ impl Application {
                 .map(|r| r.get::<_, i64>(0))
                 .unwrap_or(0);
             let channel = circle(date, saved);
-            let lower = channel["min_steps"].as_i64().unwrap();
-            let upper = channel["max_steps"].as_i64().unwrap();
-            let rows=tx.query("WITH visible AS (SELECT u.id AS user_id,u.nickname,COALESCE(s.steps,0) AS steps FROM users u JOIN circle_participation p ON p.user_id=u.id AND p.enabled=1 LEFT JOIN daily_steps s ON s.user_id=u.id AND s.date=$1 WHERE u.sharing_enabled=1), members AS (SELECT *,ROW_NUMBER() OVER(ORDER BY steps DESC,user_id ASC) AS position FROM visible WHERE steps BETWEEN $2 AND $3) SELECT * FROM members ORDER BY position",&[&date,&lower,&upper])?;
             common["participating"] = json!(true);
             common["circle"] = channel.clone();
-            (rows, Some(channel["id"].as_str().unwrap().to_owned()))
+            Some(channel)
         } else {
-            (tx.query("WITH visible AS (SELECT u.id AS user_id,u.nickname,COALESCE(s.steps,0) AS steps FROM users u LEFT JOIN daily_steps s ON s.user_id=u.id AND s.date=$1 WHERE u.sharing_enabled=1),ranked AS (SELECT *,RANK() OVER(ORDER BY steps DESC) AS rank,ROW_NUMBER() OVER(ORDER BY steps DESC,user_id ASC) AS position FROM visible) SELECT * FROM ranked ORDER BY position",&[&date])?,None)
+            None
         };
-        let total = rows.len() as i64;
+        let lower = channel
+            .as_ref()
+            .map(|c| c["min_steps"].as_i64().unwrap())
+            .unwrap_or(0);
+        let upper = channel
+            .as_ref()
+            .map(|c| c["max_steps"].as_i64().unwrap())
+            .unwrap_or(MAX_STEPS);
+        let channel_id = channel.as_ref().map(|c| c["id"].as_str().unwrap());
+        // COUNT and bounded page/own-row queries share one repeatable-read snapshot.
+        // Ranking/sorting may scan the cohort in PostgreSQL; only LIMIT rows cross the wire.
+        let visible = "WITH visible AS (SELECT u.id AS user_id,u.nickname,COALESCE(s.steps,0) AS steps FROM users u LEFT JOIN daily_steps s ON s.user_id=u.id AND s.date=$1 LEFT JOIN circle_participation p ON p.user_id=u.id WHERE u.sharing_enabled=1 AND (NOT $2::boolean OR p.enabled=1) AND COALESCE(s.steps,0) BETWEEN $3 AND $4)";
+        let total: i64 = tx
+            .query_one(
+                &format!("{visible} SELECT count(*) FROM visible"),
+                &[&date, &is_circle, &lower, &upper],
+            )?
+            .get(0);
         common["total"] = json!(total);
+        let ranked = format!("{visible}, ranked AS (SELECT *,RANK() OVER(ORDER BY steps DESC) AS rank,ROW_NUMBER() OVER(ORDER BY steps DESC,user_id ASC) AS position FROM visible)");
         let entry = |r: &Row| -> Value {
             let id: String = r.get("user_id");
             let count: i64 = r.get("steps");
@@ -524,14 +544,15 @@ impl Application {
             e
         };
         if path.ends_with("/me") || path == "/v1/circles/current" {
-            let own = rows
-                .iter()
-                .find(|r| r.get::<_, String>("user_id") == viewer.id);
-            let e = own.map(entry);
-            let c = own.map(|r| {
+            let own = tx.query_opt(
+                &format!("{ranked} SELECT * FROM ranked WHERE user_id=$5"),
+                &[&date, &is_circle, &lower, &upper, &viewer.id],
+            )?;
+            let e = own.as_ref().map(entry);
+            let c = own.as_ref().map(|r| {
                 cursor(
                     &snapshot,
-                    channel.as_deref(),
+                    channel_id,
                     ((r.get::<_, i64>("position") - 1) / limit) * limit,
                     limit,
                 )
@@ -539,22 +560,21 @@ impl Application {
             return Ok(merge(common, json!({"entry":e,"page_cursor":c})));
         }
         let offset = if let Some(c) = params.get("cursor") {
-            read_cursor(c, &snapshot, channel.as_deref(), limit)?
+            read_cursor(c, &snapshot, channel_id, limit)?
         } else {
             0
         };
         if offset > 0 && offset >= total {
             return Err(ApiError::new(422, "invalid_cursor", "分页位置无效，请刷新"));
         }
-        let items: Vec<Value> = rows
-            .iter()
-            .skip(offset as usize)
-            .take(limit as usize)
-            .map(entry)
-            .collect();
+        let rows = tx.query(
+            &format!("{ranked} SELECT * FROM ranked ORDER BY position LIMIT $5 OFFSET $6"),
+            &[&date, &is_circle, &lower, &upper, &limit, &offset],
+        )?;
+        let items: Vec<Value> = rows.iter().map(entry).collect();
         let next = offset + items.len() as i64;
         let next_cursor = if next < total {
-            Some(cursor(&snapshot, channel.as_deref(), next, limit))
+            Some(cursor(&snapshot, channel_id, next, limit))
         } else {
             None
         };
@@ -576,13 +596,13 @@ mod tests {
 
     static POSTGRES_FIXTURE_START: Mutex<()> = Mutex::new(());
 
-    struct Fixture {
-        app: Application,
+    pub(super) struct Fixture {
+        pub(super) app: Application,
         schema: String,
         clock: Arc<Mutex<DateTime<Utc>>>,
     }
     impl Fixture {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let _startup = POSTGRES_FIXTURE_START.lock().unwrap();
             let schema = format!("test_{}", Uuid::new_v4().simple());
             let script =
@@ -702,7 +722,7 @@ mod tests {
             db.query_one("SELECT MAX(version) FROM schema_migrations", &[])
                 .unwrap()
                 .get::<_, i64>(0),
-            2
+            3
         );
     }
     #[test]
@@ -821,5 +841,126 @@ mod tests {
                 .unwrap()["progress"]["steps"],
             0
         );
+    }
+}
+
+#[cfg(test)]
+mod pool_tests {
+    use super::tests::Fixture;
+    use crate::pool::{Pool, PoolConfig};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn postgres_pool_bounds_timeout_reuse_rollback_and_broken_connection() {
+        fn ready_lease(pool: &Pool) -> crate::pool::Lease {
+            // The 80ms budget below tests exhaustion, not database startup speed.
+            // A late connection still occupies its bounded slot and may become
+            // available to a later acquisition. Fail if recovery takes too long.
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                match pool.get() {
+                    Ok(lease) => return lease,
+                    Err(error) if error.code == "database_busy" && Instant::now() < deadline => {}
+                    Err(error) => panic!("pool did not become ready: {error:?}"),
+                }
+            }
+        }
+        let f = Fixture::new();
+        let pool = Pool::new(
+            &f.app.database_url,
+            PoolConfig {
+                max_connections: 2,
+                acquire_timeout: Duration::from_millis(80),
+            },
+        )
+        .unwrap();
+        let mut first = ready_lease(&pool);
+        let second = ready_lease(&pool);
+        let first_pid: i32 = first
+            .query_one("SELECT pg_backend_pid()", &[])
+            .unwrap()
+            .get(0);
+        let start = Instant::now();
+        assert_eq!(pool.get().err().unwrap().code, "database_busy");
+        assert!(start.elapsed() >= Duration::from_millis(60));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        {
+            let mut tx = first.transaction().unwrap();
+            tx.execute(
+                "INSERT INTO metadata(key,value) VALUES('must_rollback',1)",
+                &[],
+            )
+            .unwrap();
+            assert!(tx.batch_execute("SELECT 1/0").is_err());
+            // RAII drops the failed transaction before returning the lease.
+        }
+        drop(first);
+        let mut reused = ready_lease(&pool);
+        assert_eq!(
+            reused
+                .query_one("SELECT pg_backend_pid()", &[])
+                .unwrap()
+                .get::<_, i32>(0),
+            first_pid
+        );
+        assert_eq!(
+            reused
+                .query_one(
+                    "SELECT count(*) FROM metadata WHERE key='must_rollback'",
+                    &[]
+                )
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        let mut observer = f.app.connect().unwrap();
+        observer
+            .query_one("SELECT pg_terminate_backend($1)", &[&first_pid])
+            .unwrap();
+        // Synchronous postgres drives its connection when queried. Observe the real
+        // termination before drop so the dead client is discarded, not retained.
+        assert!(reused.simple_query("SELECT 1").is_err());
+        assert!(reused.is_closed());
+        drop(reused);
+        let mut replacement = ready_lease(&pool);
+        assert_ne!(
+            replacement
+                .query_one("SELECT pg_backend_pid()", &[])
+                .unwrap()
+                .get::<_, i32>(0),
+            first_pid
+        );
+        drop(second);
+    }
+
+    #[test]
+    fn postgres_pool_waiter_receives_returned_lease_without_exceeding_limit() {
+        let f = Fixture::new();
+        let pool = Pool::new(
+            &f.app.database_url,
+            PoolConfig {
+                max_connections: 1,
+                acquire_timeout: Duration::from_secs(1),
+            },
+        )
+        .unwrap();
+        let mut lease = pool.get().unwrap();
+        let pid: i32 = lease
+            .query_one("SELECT pg_backend_pid()", &[])
+            .unwrap()
+            .get(0);
+        let other = pool.clone();
+        let waiter = std::thread::spawn(move || {
+            other
+                .get()
+                .unwrap()
+                .query_one("SELECT pg_backend_pid()", &[])
+                .unwrap()
+                .get::<_, i32>(0)
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!waiter.is_finished());
+        drop(lease);
+        assert_eq!(waiter.join().unwrap(), pid);
     }
 }

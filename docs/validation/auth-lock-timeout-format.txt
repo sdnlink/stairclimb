@@ -1,0 +1,13 @@
+Diff in /home/skn/code/stairclimb/backend/src/auth.rs:125:
+     )?;
+     Ok(())
+ }
+-fn lock_auth_user(
+-    tx: &mut impl GenericClient,
+-    id: &str,
+-    missing: fn() -> ApiError,
+-) -> Result<()> {
++fn lock_auth_user(tx: &mut impl GenericClient, id: &str, missing: fn() -> ApiError) -> Result<()> {
+     crate::storage::lock_user(tx, id).map_err(|error| {
+         // Only an absent user is a credential failure. Preserve database errors
+         // so a lock timeout does not tell clients to discard valid credentials.

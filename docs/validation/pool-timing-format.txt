@@ -1,0 +1,10 @@
+Diff in /home/skn/code/stairclimb/backend/src/storage.rs:860:
+             loop {
+                 match pool.get() {
+                     Ok(lease) => return lease,
+-                    Err(error)
+-                        if error.code == "database_busy" && Instant::now() < deadline => {}
++                    Err(error) if error.code == "database_busy" && Instant::now() < deadline => {}
+                     Err(error) => panic!("pool did not become ready: {error:?}"),
+                 }
+             }

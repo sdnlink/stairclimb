@@ -14,7 +14,7 @@ from backend.tests.pg_fixture import Database
 
 
 ROOT = Path(__file__).resolve().parents[2]
-VARIABLES = ("STAIRCLIMB_HOST", "STAIRCLIMB_PORT", "DATABASE_URL")
+VARIABLES = ("STAIRCLIMB_HOST", "STAIRCLIMB_PORT", "DATABASE_URL", "STAIRCLIMB_DB_POOL_MAX", "STAIRCLIMB_DB_POOL_TIMEOUT_MS")
 
 
 class LauncherTests(unittest.TestCase):
@@ -34,6 +34,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), {
             "STAIRCLIMB_HOST": "127.0.0.1", "STAIRCLIMB_PORT": "8787",
             "DATABASE_URL": "postgresql://stairclimb:CHANGE_ME@127.0.0.1:5432/stairclimb",
+            "STAIRCLIMB_DB_POOL_MAX": "8", "STAIRCLIMB_DB_POOL_TIMEOUT_MS": "1500",
         })
 
     def test_sourced_custom_config_starts_real_server_on_temporary_port_and_database(self):
@@ -72,7 +73,7 @@ class LauncherTests(unittest.TestCase):
                         self.assertEqual(json.loads(response.read())["status"], "ok")
                     finally:
                         connection.close()
-                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 2)
+                    self.assertEqual(database.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 3)
                     self.assertTrue(Path(f'/proc/{process.pid}/exe').resolve().name == 'stairclimb-server')
                 finally:
                     process.terminate()
