@@ -1,6 +1,23 @@
 # 本地持续运行交付
 
-需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。原模块定义和历史日志保留。基础与圈子运行交付已接受，本轮补齐 `email_auth_delivery`，提交独立复核；本次为模块结论，整体需求的最终接受由reviewer和Watcher另行确认。
+需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。全部16个模块已获独立评审接受，当前完成源码与Linux可运行部分的最终交接，提交整体验收。原模块定义、实现及历史日志保留；下文各模块段落的源码基线和测试数量为当时记录。
+
+## 当前交接
+
+| 交付项 | 入口或实际结果 |
+| --- | --- |
+| 原生工程 | [StairClimb.xcodeproj](../ios/StairClimb.xcodeproj)，共享scheme `StairClimb`，测试target `StairClimbTests` |
+| API及配置 | [业务API](API.md)、[邮箱与SMTP](EMAIL_AUTH.md)、[HTTPS与设备信任](HTTPS.md)、[无密钥配置示例](../backend/development.env.example) |
+| 完整集成 | [三用户HTTPS契约日志](validation/email-delivery-integration.txt)覆盖注册验证、分页本人、午夜、撤回删除、重启、503及SMTP失败，退出0 |
+| 固定检查 | 第35轮Watcher：Python 124项、Rust 18项、格式检查均退出0；未变实现复用该轮证据，不冒称本次重新运行 |
+| 最近邮箱自检 | 2026-11-15 08:02:44 UTC，持续实例认证生命周期及真实排行榜/本人/圈友通过，删除2个自检账号；`.runtime/delivery/email-probe.json` |
+| 宿主实时核验 | 2026-11-15 08:09:50 UTC，`python3 scripts/local_service.py status`及下方可信CA健康GET均退出0；HTTPS地址、进程及数据库沿用下文记录 |
+| 运行文件 | `.runtime/delivery/service.json`、`final-handoff.json`；日志为同目录`server.log`、`smtp.log`、`build.log`；CA为`tls/ca.pem`，服务证书及私钥保留在该私有目录 |
+| Apple验证 | Swift编译、XCTest、签名、系统证书信任、真机HealthKit及视觉交互未执行；[Mac入口与iPhone步骤](APPLE_VALIDATION.md)已交付 |
+
+此次交接基线为 `ea6efdc570b68230d286bcdfe3712498217fd050` 加README和本页状态更新，应用、后端、迁移及测试未修改。宿主核验确认Rust PID1521357、SMTP PID1521354仍匹配启动标识，运行中与磁盘二进制SHA-256均为 `dd563bfa4b1f5761cd6a547d49c685ca58796eda06f215ec25684fe0f7141a91`，15项后端输入摘要全部匹配，迁移为1至3；六张关联业务表当前均为0行，自检未留下假榜单。结构化核验收据保存在权限600的 `.runtime/delivery/final-handoff.json`，不含密码、邮件证明或会话。
+
+这些实时结果来自worker可见的宿主。reviewer的隔离进程/网络视图可能无法观察宿主PID或访问其回环地址，不能把该隔离结果当作服务故障，也不能把worker收据冒称独立实时验证。Apple未执行项按原需求保留为平台限制，不是源码与Linux交付的未实现功能；没有伪造平台结果，也没有为绕过限制放宽HTTPS或改变监听范围。
 
 ## 启动、检查与停止
 
