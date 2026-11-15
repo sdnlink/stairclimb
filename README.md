@@ -4,7 +4,7 @@
 
 当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行，最终集成交付尚未完成。
 
-邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通；Mac构建入口及最终集成交付继续必交，本次模块交审不代表整个需求完成。
+邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。连接池、用户行锁和数据库分页见[访问边界与实验](docs/DATA_ACCESS.md)。本机进度、同步、榜单及圈子的成功时间和缓存提示已接通；[Mac自动构建/XCTest入口及真机清单](docs/APPLE_VALIDATION.md)已提供，最终集成交付继续必交，本次模块交审不代表整个需求完成。
 
 ## 本地启动
 
@@ -100,7 +100,15 @@ python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
 
 检查解析真实 PBX 对象图、源文件和测试 target 关联、共享 scheme、配置包含关系、HealthKit capability/entitlements、中文隐私说明、图标及 Debug/Release ATS；还核对 Rust 权威规则、历史Python规则参考和Swift的换算、上限及1000步参数一致。检查器自身的隔离回归会破坏工程引用、scheme、entitlement、ATS等输入，验证确实拒绝错误配置。这些都是静态结构检查，**不等于 Swift 编译或 XCTest 已运行**。本轮日志和源码指纹见 [ios_local 验证记录](docs/verification-04.md)。
 
-Mac 编译和单元测试命令（仓库根目录执行；先用 `xcrun simctl list devices available` 确认已安装的 iPhone 模拟器，按实际名称替换测试 destination）：
+Mac统一入口自动选取已安装的iOS17+ iPhone模拟器，运行Debug/Release构建和全部XCTest，保留原始日志、退出码、源码指纹及结果包；任何构建失败、零测试、失败/跳过测试都不会报告通过：
+
+```sh
+python3 scripts/validate_apple.py
+```
+
+可用`--device-id <UDID>`指定已有模拟器，`--output <新目录>`保存输出；默认在忽略的`.runtime/apple-validation/`下。已提供[macOS workflow](.github/workflows/apple.yml)，与本地使用同一入口，尚未触发远程CI。环境准备、收据说明及真机HealthKit/证书/断网/跨日/迁圈验收步骤见[Apple验证说明](docs/APPLE_VALIDATION.md)。该入口的Linux编排测试使用替身工具，不是Swift或XCTest执行。
+
+等效底层命令（仓库根目录执行；先用 `xcrun simctl list devices available` 确认已安装的 iPhone 模拟器，按实际名称替换测试 destination）：
 
 ```sh
 xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
@@ -133,7 +141,7 @@ python3 scripts/verify_ios_api.py
 
 已有匿名Keychain记录兼容保留，通过“绑定旧身份邮箱”发送验证邮件，验证/重置同时使用该设备原凭证。成功后登录原账号，保留原ID、昵称、历史和同意状态；本机停传状态不会被绑定或登录自动打开。若邮箱被他人未验证的旧绑定占用，可申请找回邮件，再主动选择“建立独立账号”；不合并或获取旧身份。切换到另一个账号前须处理原账号数据，再明确移除此机凭证。
 
-当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac构建入口、最终集成和持续后端实例仍由后续模块交付，整体需求尚未完成。
+当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令、自动入口和workflow不能作为已经通过的证据。成功时间/缓存增量新增9项关联XCTest方法，并加强既有失败、跨日及迁圈断言；源码已关联现有测试target，但尚未执行XCTest。Linux聚焦与37项结构回归、真实HTTPS依赖契约结果分别见[聚焦日志](docs/validation/ios-freshness-focused.txt)、[结构回归](docs/validation/ios-freshness-regression.txt)、[依赖验证](docs/validation/ios-freshness-dependencies.txt)。Mac入口已交付源码及Linux可运行检查，实际Apple平台验证仍待设备；最终集成和持续后端实例继续待交付，整体需求尚未完成。
 
 监督流程已由外部 Auto Moniter 启动，worker 不修改监督器源码、不提交或暂存 Git。独立 reviewer 和 Watcher 的复核结果由监督流程记录，本 README 不冒称它们已接受实现。
 

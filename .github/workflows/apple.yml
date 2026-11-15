@@ -1,0 +1,50 @@
+name: Apple build and XCTest
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'scripts/validate_apple.py'
+      - 'scripts/check_ios_project.py'
+      - 'backend/domain.py'
+      - 'backend/src/domain.rs'
+      - '.github/workflows/apple.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'scripts/validate_apple.py'
+      - 'scripts/check_ios_project.py'
+      - 'backend/domain.py'
+      - 'backend/src/domain.rs'
+      - '.github/workflows/apple.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Debug and Release; run every XCTest
+        run: python3 scripts/validate_apple.py --output .runtime/apple-ci
+      - name: Preserve commands, exit codes, logs and xcresult
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .runtime/apple-ci/receipt.json
+            .runtime/apple-ci/*.log
+            .runtime/apple-ci/Tests.xcresult
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

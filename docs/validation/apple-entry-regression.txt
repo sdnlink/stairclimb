@@ -1,0 +1,60 @@
+BASE_SOURCE=e030125d1bbe7f28ebede0692e11731259815b35 plus current apple_build_validation worktree increment
+LIMIT: fake Apple tool tests exercise orchestration only; no Swift or XCTest execution.
+$ python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+test_artifacts_cannot_be_written_over_source (test_apple_validation.AppleValidationTests.test_artifacts_cannot_be_written_over_source) ... ok
+test_broken_security_configuration_stops_before_apple_commands (test_apple_validation.AppleValidationTests.test_broken_security_configuration_stops_before_apple_commands) ... ok
+test_build_failure_stops_before_tests_and_preserves_exit_code (test_apple_validation.AppleValidationTests.test_build_failure_stops_before_tests_and_preserves_exit_code) ... ok
+test_changed_source_cannot_receive_a_passed_receipt (test_apple_validation.AppleValidationTests.test_changed_source_cannot_receive_a_passed_receipt) ... ok
+test_cli_on_linux_fails_without_claiming_an_apple_result (test_apple_validation.AppleValidationTests.test_cli_on_linux_fails_without_claiming_an_apple_result) ... ok
+test_complete_runner_keeps_real_project_full_suite_and_artifacts (test_apple_validation.AppleValidationTests.test_complete_runner_keeps_real_project_full_suite_and_artifacts) ... ok
+test_failed_xctest_cannot_report_passed (test_apple_validation.AppleValidationTests.test_failed_xctest_cannot_report_passed) ... ok
+test_no_available_simulator_fails_before_build (test_apple_validation.AppleValidationTests.test_no_available_simulator_fails_before_build) ... ok
+test_non_mac_guard_never_runs_fake_apple_tools (test_apple_validation.AppleValidationTests.test_non_mac_guard_never_runs_fake_apple_tools) ... ok
+test_old_xcode_fails_with_receipt (test_apple_validation.AppleValidationTests.test_old_xcode_fails_with_receipt) ... ok
+test_reused_output_directory_is_not_overwritten (test_apple_validation.AppleValidationTests.test_reused_output_directory_is_not_overwritten) ... ok
+test_simulator_selection_excludes_wrong_platform_old_and_unavailable (test_apple_validation.AppleValidationTests.test_simulator_selection_excludes_wrong_platform_old_and_unavailable) ... ok
+test_wrong_requested_device_does_not_silently_fall_back (test_apple_validation.AppleValidationTests.test_wrong_requested_device_does_not_silently_fall_back) ... ok
+test_zero_skipped_failed_or_malformed_results_cannot_pass (test_apple_validation.AppleValidationTests.test_zero_skipped_failed_or_malformed_results_cannot_pass) ... ok
+test_anonymous_registration_path_is_rejected (test_ios_project.IOSProjectChecks.test_anonymous_registration_path_is_rejected) ... ok
+test_background_cache_marking_is_required (test_ios_project.IOSProjectChecks.test_background_cache_marking_is_required) ... ok
+test_credential_redirects_cannot_be_enabled (test_ios_project.IOSProjectChecks.test_credential_redirects_cannot_be_enabled) ... ok
+test_custom_certificate_trust_bypass_rejected (test_ios_project.IOSProjectChecks.test_custom_certificate_trust_bypass_rejected) ... ok
+test_debug_arbitrary_loads_are_still_rejected (test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_exception_cannot_enter_release (test_ios_project.IOSProjectChecks.test_debug_legacy_exception_cannot_enter_release) ... ok
+test_debug_local_http_and_all_exception_ranges_rejected (test_ios_project.IOSProjectChecks.test_debug_local_http_and_all_exception_ranges_rejected) ... ok
+test_debug_local_key_alone_rejected (test_ios_project.IOSProjectChecks.test_debug_local_key_alone_rejected) ... ok
+test_direct_client_bypass_rejected (test_ios_project.IOSProjectChecks.test_direct_client_bypass_rejected) ... ok
+test_disabled_capability (test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_http_address_bypass_rejected (test_ios_project.IOSProjectChecks.test_http_address_bypass_rejected) ... ok
+test_missing_circle_midnight_test_is_rejected (test_ios_project.IOSProjectChecks.test_missing_circle_midnight_test_is_rejected) ... ok
+test_missing_circle_privacy_action_is_rejected (test_ios_project.IOSProjectChecks.test_missing_circle_privacy_action_is_rejected) ... ok
+test_missing_entitlement (test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_freshness_failure_path_test_is_rejected (test_ios_project.IOSProjectChecks.test_missing_freshness_failure_path_test_is_rejected) ... ok
+test_missing_icon (test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_missing_success_time_or_cache_binding_is_rejected (test_ios_project.IOSProjectChecks.test_missing_success_time_or_cache_binding_is_rejected) ... ok
+test_openstep_duplicate_key_rejected (test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_persisting_password_is_rejected (test_ios_project.IOSProjectChecks.test_persisting_password_is_rejected) ... ok
+test_release_ats_bypass (test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_local_exception_is_also_rejected (test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_secrets_surviving_background_is_rejected (test_ios_project.IOSProjectChecks.test_secrets_surviving_background_is_rejected) ... ok
+test_test_target_has_no_app_dependency (test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_tls_minimum_cannot_be_lowered (test_ios_project.IOSProjectChecks.test_tls_minimum_cannot_be_lowered) ... ok
+test_unlinked_email_tests_are_rejected (test_ios_project.IOSProjectChecks.test_unlinked_email_tests_are_rejected) ... ok
+test_unlinked_source (test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_unwired_circle_pagination_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_circle_pagination_is_rejected) ... ok
+test_unwired_circle_tab_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_circle_tab_is_rejected) ... ok
+test_unwired_email_form_is_rejected (test_ios_project.IOSProjectChecks.test_unwired_email_form_is_rejected) ... ok
+test_valid_project (test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 51 tests in 3.450s
+
+OK
+EXIT_STATUS=0

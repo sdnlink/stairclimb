@@ -1,0 +1,21 @@
+BASE_SOURCE=e030125d1bbe7f28ebede0692e11731259815b35 plus current apple_build_validation worktree increment
+$ /home/skn/anaconda3/bin/python3 scripts/check_ios_project.py
+PASS project reference graph: 97 objects; 18 app + 7 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, freshness display/cache lifecycle and XCTest wiring
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+EXIT_STATUS=0; EXPECTED=0
+
+$ /home/skn/anaconda3/bin/python3 -m py_compile scripts/validate_apple.py scripts/tests/test_apple_validation.py
+EXIT_STATUS=0; EXPECTED=0
+
+$ /home/skn/anaconda3/bin/python3 scripts/validate_apple.py --output .runtime/apple-linux-unexecuted
+FAIL: Apple validation requires macOS with Xcode 16+ and an iOS simulator. Linux structure/orchestration checks do not execute Swift or XCTest.
+EXIT_STATUS=2; EXPECTED=2
+
+PASS: unsupported Linux run produced no Apple output or success receipt.
+PASS: 75 unchanged accepted dependency inputs match ios-freshness-sources.sha256; README intentionally updated.
+PASS: workflow parsed with installed PyYAML; macos-15, actual entrypoint and always() artifacts.
+PASS: final workflow YAML: read-only permissions, always() artifacts with hidden .runtime enabled; explicit allowlist excludes credentials.
