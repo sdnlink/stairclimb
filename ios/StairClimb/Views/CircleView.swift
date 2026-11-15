@@ -6,6 +6,7 @@ struct CircleView: View {
     @ObservedObject var local: LocalAppModel
     @State private var consent = false
     @State private var leaving = false
+    @State private var showAccount = false
 
     private func refresh() async {
         await model.foreground(local: local)
@@ -19,11 +20,29 @@ struct CircleView: View {
                     Text("只显示真实成员，小圈不凑人数。历史健康数据不清除；这里不提供即时聊天或真实地理位置。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if model.state.identity == nil {
-                    Section { Text("请先在“今日楼层榜”创建联网身份；不参加仍可查看本机运动。") }
+                if !model.storageReady {
+                    Section("安全存储未就绪") {
+                        Text("网络操作与上传已停止。请解锁设备后重试；本机运动仍可独立查看。")
+                        Button("重试安全存储") { model.retrySecureStorage() }
+                    }
+                } else if model.state.logoutPending == true {
+                    Section("退出等待确认") {
+                        Text("本机已停止上传，旧圈友已清除。服务器尚未确认退出，不能自动重新参加。")
+                        Button("重试退出") { Task { await model.logout() } }.disabled(model.busy)
+                        Button("登录同一账号以处理待完成退出") { showAccount = true }.disabled(model.busy)
+                    }
                 } else if model.state.privacy != nil {
                     Section("隐私操作待确认") {
                         Text("本机已停止上传，圈子缓存已清除。请在今日楼层榜继续确认；不会自动重新参加。")
+                    }
+                } else if model.state.identity == nil || !model.authenticated {
+                    Section("验证邮箱后查看圈友") {
+                        Text("请先注册、验证邮箱并登录；登录不等于健康共享或参加圈子。不参加仍可在“我的楼梯”查看本机运动。")
+                        Button(model.isLegacyIdentity ? "绑定旧身份邮箱" : "注册、验证或登录") { showAccount = true }
+                            .disabled(model.busy)
+                        if model.state.identity != nil {
+                            Button("刷新已有会话") { Task { await refresh() } }.disabled(model.busy)
+                        }
                     }
                 } else {
                     if let channel = model.circle {
@@ -53,7 +72,9 @@ struct CircleView: View {
                         }
                     }
                     Button("读取、同步并刷新今日圈子") { Task { await refresh() } }.disabled(model.busy)
-                    Button("退出圈子并撤回共享", role: .destructive) { leaving = true }
+                    if model.circleParticipating == true || model.state.identity?.user.sharingEnabled == true {
+                        Button("退出圈子并撤回共享", role: .destructive) { leaving = true }
+                    }
                 }
                 if model.busy { HStack { ProgressView(); Text("正在确认服务器状态") } }
                 if let error = model.circleError { Section("未完成") { Text(error); Text("请检查网络后刷新，旧频道不会当作今日结果。") } }
@@ -62,6 +83,7 @@ struct CircleView: View {
             .navigationTitle("今日运动圈子")
             .refreshable { await refresh() }
             .task { await model.refreshCircle() }
+            .sheet(isPresented: $showAccount) { EmailAccountView(model: model) }
             .alert("主动同意参加运动圈子？", isPresented: $consent) {
                 Button("主动同意参加") { Task { await model.joinCircle(); await model.refreshCircle() } }
                 Button("暂不参加", role: .cancel) {}

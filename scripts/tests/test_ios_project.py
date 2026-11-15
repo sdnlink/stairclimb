@@ -190,6 +190,26 @@ class IOSProjectChecks(unittest.TestCase):
                      'phase != .active { clearSecrets()', 'phase != .active { ignored(')
         self.rejects('Secrets must clear on close/background')
 
+    def test_unwired_circle_tab_is_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Views/SocialView.swift',
+                     'CircleView(model: social, local: local)', 'Text("TODO")')
+        self.rejects('Circle page must be connected')
+
+    def test_unwired_circle_pagination_is_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Views/CircleView.swift',
+                     'model.refreshCircle(more: true)', 'model.refreshCircle()')
+        self.rejects('Circle page action is not wired')
+
+    def test_missing_circle_privacy_action_is_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Views/CircleView.swift',
+                     'model.privacy(.revoke, confirmNewAttempt: true)', 'model.refreshCircle()')
+        self.rejects('Circle page action is not wired')
+
+    def test_missing_circle_midnight_test_is_rejected(self):
+        self.replace(self.root/'ios/StairClimbTests/CircleTests.swift',
+                     'func testMidnightInvalidatesHeldResponseAndForegroundReadsBeforeRegrouping(', 'func renamed(')
+        self.rejects('Missing circle XCTest scenario')
+
     def test_openstep_duplicate_key_rejected(self):
         with self.assertRaisesRegex(CheckFailure, 'Duplicate project key'):
             openstep('{ a = 1; a = 2; }')

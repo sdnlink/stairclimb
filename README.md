@@ -2,9 +2,9 @@
 
 原生 SwiftUI iOS 应用 + Rust HTTP/PostgreSQL 后端的分模块实现（按最新技术栈授权迁移）。所有楼层都是每 100 步兑换的虚拟游戏楼层，日界线统一为 **Asia/Shanghai**，不采集真实地理位置。
 
-当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜与隐私操作。中文圈子页面及最终集成验收仍为后续必交模块；没有静态假榜单。Linux检查与真实HTTP契约验证已执行，Apple平台验证仍未执行。
+当前后端已实现服务器规则、身份认证、昵称、带版本锁的共享状态、当日累计快照、真实分页排行榜、本人定位、隐私删除，以及按每日步数自动匹配的运动圈子。SwiftUI 工程含本机 HealthKit 楼梯进度、Keychain 身份及真实 API 联网注册/共享、排行榜、隐私操作和中文“今日运动圈子”页面；没有静态假榜单。Linux检查与真实HTTPS契约验证已执行，Apple平台验证仍未执行，最终集成交付尚未完成。
 
-本轮新增邮箱认证后端已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。本轮仅交审`ios_network`和`ios_email_auth`，最终交付仍未完成。后续性能/Swift时间标记/Mac构建入口增量继续必交，不以本模块交审替代全需求完成。
+邮箱认证已接通注册验证、登录、刷新/退出、找回密码与旧身份绑定，见[邮箱API和SMTP运行说明](docs/EMAIL_AUTH.md)。正式匿名注册已关闭，Swift中文邮箱表单已接通注册、验证、登录、重发、找回/重置、旧身份绑定与退出；原生TLS服务与严格HTTPS客户端策略见[HTTPS配置](docs/HTTPS.md)。本轮仅交审`ios_circles`，保留已接受的邮箱与联网模块。后续性能/Swift时间标记/Mac构建入口及最终集成交付继续必交，不以本模块交审替代全需求完成。
 
 ## 本地启动
 
@@ -61,7 +61,21 @@ python3 -m unittest backend.tests.test_social -v
 
 圈子需要额外主动同意“按步数区间分组，昵称、当日汇总步数及虚拟楼层会对圈友可见”，旧共享账号不会自动加入。未参加仍可本地运动，也可仅共享排行榜。撤回共享、退出圈子、删除共享步数都会停止上传并移除圈子资格；重新共享榜单不会自动重新参加圈子。接口及退出、删除语义见 [API](docs/API.md)。
 
-新增要求已先经独立 reviewer 确认覆盖及扩展清单，见 [评审记录](docs/review-03-amendment.md)。后端聚焦命令为 `python3 -m unittest backend.tests.test_circles -v`；实现与本轮实际验证见 [圈子后端记录](docs/verification-03.md)。中文圈子页面、Swift分组测试和最终圈子集成仍是必交的后续模块，未用后端里程碑替代整体完成。
+“运动圈子”标签打开中文“今日运动圈子”页面，展示上海日期、频道、1000步区间、真实人数、昵称、步数、虚拟楼层及本人标记，可加载全部圈友、定位本人、刷新。未登录可直接进入邮箱表单；先在榜单主动共享，再在圈子单独确认参与。小圈直接显示真实成员，不混入其他区间；未参加、加载、错误及退出待确认均有明确状态。圈友请求失败清除旧成员并提示重试；分页版本变化要求从头刷新。同步发送前隐藏旧圈友，避免可能迁圈或丢失上传响应后仍展示旧频道。退出同时撤回共享，待确认时停传且不会自动参加；删除入口仍在榜单的隐私操作中。
+
+新增要求已先经独立 reviewer 确认覆盖，见[评审记录](docs/review-03-amendment.md)。保存的[圈子后端记录](docs/verification-03.md)继续保留；本轮原生圈子及真实HTTPS契约记录见[ios_circles交审](docs/verification-12-ios-circles.md)。复现本轮聚焦及相关回归：
+
+```sh
+python3 scripts/check_ios_project.py
+python3 scripts/verify_ios_circles.py
+python3 -m unittest backend.tests.test_circles scripts.tests.test_ios_project -v
+```
+
+探针使用三个实际验证邮箱账号、受信任测试CA、Rust/PostgreSQL及隔离SMTP，核对999/1000分圈、分页本人、双向迁圈、重复同步、隐私删除、重启、上海午夜、历史保留及503，不向外部邮箱发送邮件。端口、schema、证书及邮件在结束后清理；不等于iOS运行验证。Swift圈子测试已关联现有target，可在Mac按下文完整测试命令运行，或聚焦执行（按实际模拟器名称调整）：
+
+```sh
+xcodebuild -project ios/StairClimb.xcodeproj -scheme StairClimb -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO -only-testing:StairClimbTests/CircleRuleTests -only-testing:StairClimbTests/CircleStateTests test
+```
 
 ## iOS 本机进度模块
 
@@ -113,7 +127,7 @@ python3 scripts/verify_ios_api.py
 
 已有匿名Keychain记录兼容保留，通过“绑定旧身份邮箱”发送验证邮件，验证/重置同时使用该设备原凭证。成功后登录原账号，保留原ID、昵称、历史和同意状态；本机停传状态不会被绑定或登录自动打开。若邮箱被他人未验证的旧绑定占用，可申请找回邮件，再主动选择“建立独立账号”；不合并或获取旧身份。切换到另一个账号前须处理原账号数据，再明确移除此机凭证。
 
-当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令不能作为已经通过的证据。中文圈子页面、Swift圈子匹配测试、最终集成和持续后端实例仍由后续模块完成，整体需求尚未完成。
+当前 Linux 没有 Swift、macOS/Xcode 或 iOS 模拟器；**未进行 Swift 编译、XCTest 执行、签名、真机 HealthKit 或视觉/辅助功能验证**。上述Mac命令不能作为已经通过的证据。Swift成功时间/缓存体验、Mac构建入口、数据库访问优化、最终集成和持续后端实例仍由后续模块完成，整体需求尚未完成。
 
 监督流程已由外部 Auto Moniter 启动，worker 不修改监督器源码、不提交或暂存 Git。独立 reviewer 和 Watcher 的复核结果由监督流程记录，本 README 不冒称它们已接受实现。
 
@@ -130,4 +144,4 @@ python3 scripts/import_sqlite.py --sqlite /absolute/path/to/legacy.sqlite3 --sch
 
 工具通过 SQLite online backup 创建一致备份到 `.runtime/backups/`（600权限，即使有WAL也不遗漏提交数据），在单个PostgreSQL事务内应用迁移并导入，拒绝非空目标而不清空它。逐字段核对全部用户ID、凭证摘要、昵称、同意版本/开关、圈子参与及各日期累计值/时间戳，并核对分页版本，输出仅有数量、备份路径及摘要。源库保持原样；失败保留备份用于排查，不自动删除源数据。较早仅身份/缺圈子表的库可导入，缺失参与默认为不参加。使用导入schema时在被忽略的连接配置中设置 PostgreSQL `options=-csearch_path=import_<对应32位ID>`，不要改写源码或公开连接凭证。
 
-最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹见 [本轮验证](docs/verification-06-rust-postgres.md)。后端迁移单独交审，现存 Swift 圈子页面尚待本模块之后验证；整体交付和最终持续实例仍未完成。
+最新技术栈先行独立复核及模块调整见 [变更确认](docs/review-06-stack-amendment.md)。Rust/PostgreSQL迁移当时的67项HTTP/迁移回归、12项Rust检查、真实Swift契约及源码指纹保留于[迁移验证](docs/verification-06-rust-postgres.md)。原生圈子本轮证据见上文；整体交付和最终持续实例仍未完成。

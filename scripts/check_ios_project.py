@@ -222,6 +222,24 @@ def check_project(root):
             'Refresh uncertainty and pending logout barriers must persist')
     require(not re.search(r'\b(?:print|debugPrint|NSLog|Logger)\s*\(', auth + social + account_view + api),
             'Auth/network sources must not log private fields')
+    circle_view = (ios/'StairClimb/Views/CircleView.swift').read_text()
+    circle_tests = (ios/'StairClimbTests/CircleTests.swift').read_text()
+    require('CircleView(model: social, local: local)' in social_view,
+            'Circle page must be connected to the app tabs')
+    for route in ['/v1/me/circle-participation', '/v1/circles/current/members', '/v1/circles/current/me']:
+        require(route in social, f'Missing real circle API route: {route}')
+    for action in ['model.joinCircle()', 'model.refreshCircle(more: true)', 'model.refreshCircle(locate: true)',
+                   'model.privacy(.revoke, confirmNewAttempt: true)', 'EmailAccountView(model: model)']:
+        require(action in circle_view, f'Circle page action is not wired: {action}')
+    require('主动同意参加' in circle_view and '昵称、当日汇总步数和虚拟楼层' in circle_view
+            and 'StepRules.circleBandSteps' in circle_view, 'Circle consent/rule disclosure missing')
+    require('social.foreground(local: local)' in social_view and 'social.dayChangedIfNeeded()' in social_view
+            and '.onChange(of: local.day)' in social_view, 'Circle foreground/midnight path missing')
+    for scenario in ['testAllPagesAndNonFirstPageLocation', 'testRevocationWaitsForReadAndLateResponseCannotRestoreMembers',
+                     'testOfflineDeleteStaysPendingAndCannotAutoJoinAfterRestart',
+                     'testMidnightInvalidatesHeldResponseAndForegroundReadsBeforeRegrouping',
+                     'testSyncHidesOldCircleBeforeSendingCrossBandSnapshot']:
+        require(f'func {scenario}(' in circle_tests, f'Missing circle XCTest scenario: {scenario}')
     for config in configurations(tests).values():
         settings = config['buildSettings']
         require(settings.get('TEST_HOST') == '$(BUILT_PRODUCTS_DIR)/StairClimb.app/StairClimb', 'Wrong XCTest host')
@@ -265,7 +283,7 @@ def check_project(root):
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
             'PASS shared scheme, XCTest host/dependency, source/resource membership, icon',
             'PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission',
-            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email forms/session/privacy wiring',
+            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, foreground/midnight and XCTest wiring',
             'PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone',
             'LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation']
 

@@ -1,0 +1,9 @@
+source_base=d968fe82642748511164b97cfa91761ffaad6d4a + ios_circles working diff
+command=python3 scripts/verify_ios_circles.py
+PASS HTTPS circles: 3 verified email users, independent sharing/participation consent, exact steps, 999/1000 separation, real small circles, public fields only
+PASS HTTPS circles: complete pagination, non-first-page me, bidirectional migration, old cursor refusal, duplicate snapshot idempotence
+PASS HTTPS circles: revoke/version barrier, no implicit rejoin, delete all steps closes participation, account deletion, restart persistence, other member retained
+PASS HTTPS circles: Shanghai midnight zero/regroup, yesterday cursor/upload refused, history retained, no-record zero member, actual database outage returns 503 and recovers
+CLEANUP: temporary Rust/TLS/SMTP ports, private mail/certificates and isolated PostgreSQL schema removed
+LIMIT: server contract verification only; Swift build, XCTest, device trust, HealthKit and UI remain unexecuted on Linux
+exit_status=0

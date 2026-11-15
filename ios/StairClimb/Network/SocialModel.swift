@@ -386,6 +386,9 @@ final class SocialModel: ObservableObject {
             guard ticket == epoch, canUpload else { return }
             guard local.phase == .data, let current = local.snapshot,
                   current.day.date == profile.date, current.day.contains(clock()) else { throw NetworkFailure.localData }
+            // An accepted snapshot may move us to another band. Hide the old members
+            // before sending, including when the upload result is lost.
+            clearCircle()
             let response = try await call(APIRequest(method: "PUT", path: "/v1/me/steps", body: [
                 "date": current.day.date, "steps": current.progress.steps,
                 "expected_revision": state.identity!.user.consentRevision]))
@@ -441,6 +444,7 @@ final class SocialModel: ObservableObject {
     }
 
     func refreshCircle(more: Bool = false, locate: Bool = false) async {
+        dayChangedIfNeeded()
         guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil, state.logoutPending != true else { return }
         if more && circleNext == nil { return }
         busy = true
@@ -448,11 +452,20 @@ final class SocialModel: ObservableObject {
         defer { finish() }
         do {
             var cursor = more ? circleNext : nil
+            var locatedChannel: CircleChannel?
+            var locatedVersion: String?
             if locate {
                 let location = try await call(APIRequest(method: "GET", path: "/v1/circles/current/me",
                     query: [URLQueryItem(name: "limit", value: String(pageSize))]))
                 guard ticket == epoch else { return }
                 try checkDay(location)
+                if location.participating == false { clearCircle(); circleParticipating = false; return }
+                guard location.participating == true, let channel = location.circle,
+                      let entry = location.entry, entry.isMe, entry.id == state.identity?.user.id,
+                      let version = location.snapshot, location.pageCursor != nil,
+                      location.limit == pageSize else { throw NetworkFailure.response }
+                try channel.validate(member: entry, day: ShanghaiDay(containing: clock()), userID: state.identity!.user.id)
+                locatedChannel = channel; locatedVersion = version
                 cursor = location.pageCursor
             }
             var query = [URLQueryItem(name: "limit", value: String(pageSize))]
@@ -464,17 +477,22 @@ final class SocialModel: ObservableObject {
             if !participating { clearCircle(); circleParticipating = false; return }
             guard let channel = response.circle, channel.date == response.date,
                   let members = response.items, let total = response.total, total >= 1,
-                  let version = response.snapshot, response.limit == pageSize else { throw NetworkFailure.response }
+                  let version = response.snapshot, response.limit == pageSize,
+                  !members.isEmpty, members.count <= pageSize,
+                  response.nextCursor == nil || response.nextCursor != cursor else { throw NetworkFailure.response }
             if more && (circle != channel || circleVersion != version) { throw NetworkFailure.pageChanged }
+            if locate && (locatedChannel != channel || locatedVersion != version) { throw NetworkFailure.pageChanged }
             let day = ShanghaiDay(containing: clock())
             for member in members {
-                guard try CircleChannel.expected(day: day, steps: member.steps) == channel else { throw NetworkFailure.response }
+                try channel.validate(member: member, day: day, userID: state.identity!.user.id)
             }
             let combined = more ? circleMembers + members : members
-            guard Set(combined.map(\.id)).count == combined.count else { throw NetworkFailure.response }
+            guard Set(combined.map(\.id)).count == combined.count, combined.count <= total,
+                  !locate || members.contains(where: { $0.isMe }) else { throw NetworkFailure.response }
             circle = channel; circleMembers = combined; circleTotal = total
             circleVersion = version; circleNext = response.nextCursor; circleParticipating = true; circleError = nil
         } catch {
+            guard ticket == epoch else { return }
             // Do not present stale membership or yesterday's channel as today's success.
             clearCircle(); handle(error); circleError = error.localizedDescription
         }
