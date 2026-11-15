@@ -4,7 +4,7 @@ import SwiftUI
 struct SocialView: View {
     @ObservedObject var model: SocialModel
     @ObservedObject var local: LocalAppModel
-    @State private var address = ""
+    @State private var showAccount = false
     @State private var nickname = ""
     @State private var confirmation: Confirmation?
 
@@ -28,16 +28,10 @@ struct SocialView: View {
                     leaderboard
                     privacySection
                 } else {
-                    Section("创建联网身份") {
-                        Text("无需邮箱或手机号。注册默认不公开；不注册仍能在“我的楼梯”查看本机运动。")
-                        TextField("服务根地址，例如 https://你的服务", text: $address)
-                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("联网昵称", text: $nickname)
-                        Text("连接须使用HTTPS，开发证书需在设备安装并信任CA。127.0.0.1指手机本身；真机请用证书覆盖的Linux局域网地址或域名。")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Button("注册并安全保存凭证") {
-                            Task { await model.register(address: address, nickname: nickname) }
-                        }.disabled(model.busy || !model.storageReady)
+                    Section("邮箱登录后查看真实榜单") {
+                        Text("邮箱＋密码＋昵称注册，实际验证邮箱后登录。注册不会默认公开健康数据；未登录仍可在“我的楼梯”查看本机运动。")
+                        Button("注册、验证或登录") { showAccount = true }
+                            .disabled(model.busy || !model.storageReady)
                     }
                 }
                 if let message = model.message {
@@ -61,6 +55,7 @@ struct SocialView: View {
                 nickname = model.state.identity?.user.nickname ?? local.identity?.nickname ?? ""
                 await model.refresh()
             }
+            .sheet(isPresented: $showAccount) { EmailAccountView(model: model) }
             .alert(item: $confirmation) { choice in
                 switch choice {
                 case .share:
@@ -70,9 +65,9 @@ struct SocialView: View {
                 case .deleteSteps:
                     privacyAlert(title: "删除全部共享步数？", detail: "删除服务器全部日期的步数，关闭共享与圈子参与，保留账号。不删除Apple健康数据。若上次结果未知，本次确认表示重新删除服务器现存数据。", kind: .deleteSteps)
                 case .deleteAccount:
-                    privacyAlert(title: "永久删除联网账号？", detail: "删除服务器身份、昵称、共享与圈子状态及全部步数，旧凭证失效。无法恢复，不影响本机Apple健康数据；网络失败不表示完成。", kind: .deleteAccount)
+                    privacyAlert(title: "永久删除联网账号？", detail: "删除服务器身份、邮箱、密码认证信息、会话、昵称、共享与圈子状态及全部步数，旧凭证失效。无法恢复，不影响本机Apple健康数据；网络失败不表示完成。", kind: .deleteAccount)
                 case .forget:
-                    Alert(title: Text("仅移除此机凭证？"), message: Text("这不删除或撤回服务器公开数据。丢失凭证后没有账号找回，重装和跨设备恢复均不保证。请优先使用删除账号。"), primaryButton: .destructive(Text("移除且不再找回")) { model.forgetLocalCredential() }, secondaryButton: .cancel())
+                    Alert(title: Text("仅移除此机凭证？"), message: Text("这不删除或撤回服务器公开数据。已验证邮箱账号可重新登录或找回；旧匿名身份无法凭邮箱恢复，绑定前丢失凭证可能永久失去管理权。请优先使用删除账号。"), primaryButton: .destructive(Text("仅移除此机凭证")) { model.forgetLocalCredential() }, secondaryButton: .cancel())
                 }
             }
         }
@@ -83,6 +78,8 @@ struct SocialView: View {
             LabeledContent("服务", value: identity.baseURL)
                 .font(.caption).textSelection(.enabled)
             LabeledContent("昵称", value: identity.user.nickname)
+            Button(model.isLegacyIdentity ? "绑定邮箱并保留旧身份" : "账号设置、登录与找回") { showAccount = true }
+            if model.isLegacyIdentity { Text("旧身份仅可管理隐私。绑定邮箱、实际验证并登录后才能查看榜单或上传。").foregroundStyle(.orange) }
             TextField("修改联网昵称", text: $nickname)
             Button("保存联网昵称") { Task { await model.rename(nickname) } }
                 .disabled(model.busy || !model.authenticated || model.state.privacy != nil)
@@ -157,8 +154,8 @@ struct SocialView: View {
             Button("删除全部已共享步数", role: .destructive) { confirmation = .deleteSteps }
             Button("删除联网账号及所有数据", role: .destructive) { confirmation = .deleteAccount }
             Button("仅移除此机联网凭证", role: .destructive) { confirmation = .forget }
-                .disabled(model.busy || model.state.privacy != nil || !model.storageReady)
-            Text("网络失败不会显示删除完成。其他人已看到或保存的内容无法收回。没有邮箱/手机号找回，退出、丢失凭证或重装可能永久失去账号操作权。")
+                .disabled(model.busy || model.state.privacy != nil || model.state.logoutPending == true || !model.storageReady)
+            Text("网络失败不会显示删除完成。其他人已看到或保存的内容无法收回。已验证邮箱可重新登录和找回；旧匿名身份丢失Keychain凭证可能永久失去操作权。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

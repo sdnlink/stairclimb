@@ -17,6 +17,8 @@ final class SocialModel: ObservableObject {
     @Published private(set) var syncedDate: String?
     @Published private(set) var syncedSteps: Int?
     @Published private(set) var authenticated = false
+    @Published private(set) var accountEmail: String?
+    @Published private(set) var authMessage: String?
     @Published private(set) var circle: CircleChannel?
     @Published private(set) var circleMembers: [LeaderboardEntry] = []
     @Published private(set) var circleTotal = 0
@@ -33,6 +35,7 @@ final class SocialModel: ObservableObject {
     private let clientFactory: @MainActor (URL) -> any APIRequesting
     private var client: (any APIRequesting)?
     private var epoch = UUID()
+    private var accountReadID = UUID()
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var privacyRunning = false
     private var failedInitialLoad = false
@@ -56,8 +59,11 @@ final class SocialModel: ObservableObject {
         }
     }
 
+    var isLegacyIdentity: Bool { state.identity != nil && state.identity?.refreshToken == nil }
+
     var canUpload: Bool {
-        storageReady && authenticated && state.uploadAllowed && state.privacy == nil
+        storageReady && authenticated && !isLegacyIdentity && state.uploadAllowed && state.privacy == nil
+            && state.logoutPending != true && state.identity?.refreshUncertain != true
             && state.identity?.user.sharingEnabled == true
     }
 
@@ -121,7 +127,7 @@ final class SocialModel: ObservableObject {
     private func handle(_ error: Error) {
         let failure = error as? NetworkFailure ?? .transport
         if boardDate != nil { boardIsStale = true }
-        if failure == .unauthorized || failure == .consentChanged {
+        if [.unauthorized, .consentChanged, .sessionUncertain, .emailRequired].contains(failure) {
             defaults.set(true, forKey: Self.uploadStopKey)
             state.uploadAllowed = false
             authenticated = false
@@ -135,8 +141,25 @@ final class SocialModel: ObservableObject {
     }
 
     private func call(_ request: APIRequest) async throws -> APIEnvelope {
-        guard storageReady, let client, let identity = state.identity else { throw NetworkFailure.storage }
-        return try await client.send(request, token: identity.token)
+        guard storageReady, let client, state.identity != nil else { throw NetworkFailure.storage }
+        let ticket = epoch
+        var rotated = false
+        if state.identity?.refreshToken != nil {
+            guard state.identity?.refreshUncertain != true else { throw NetworkFailure.sessionUncertain }
+            if (state.identity?.accessExpiresAt ?? .distantPast) <= clock().addingTimeInterval(30) {
+                try await rotateSession()
+                rotated = true
+            }
+        }
+        guard ticket == epoch else { throw state.privacy == nil ? NetworkFailure.dayChanged : .pendingPrivacy }
+        do { return try await client.send(request, token: state.identity!.token) }
+        catch NetworkFailure.unauthorized {
+            // Only retry a read. Never replay a health snapshot or destructive operation.
+            guard request.method == "GET", !rotated, state.identity?.refreshToken != nil else { throw NetworkFailure.unauthorized }
+            try await rotateSession()
+            guard ticket == epoch else { throw NetworkFailure.pendingPrivacy }
+            return try await client.send(request, token: state.identity!.token)
+        }
     }
 
     private func acceptUser(_ response: APIEnvelope) throws {
@@ -144,37 +167,144 @@ final class SocialModel: ObservableObject {
         state.identity?.user = user
         if !user.sharingEnabled { state.uploadAllowed = false }
         try persist()
-        authenticated = true
+        authenticated = !isLegacyIdentity && state.identity?.refreshUncertain != true
     }
 
-    func register(address: String, nickname: String) async {
-        guard !busy, !privacyRunning, storageReady, state.identity == nil, state.privacy == nil else { return }
-        busy = true
-        let ticket = epoch
-        defer { finish() }
+    private func sessionIdentity(_ response: APIEnvelope, url: URL, started: Date) throws -> NetworkIdentity {
+        guard let access = response.token, EmailRules.isToken(access),
+              let refresh = response.refreshToken, EmailRules.isToken(refresh), access != refresh,
+              response.expiresIn == 900, let user = response.user else { throw NetworkFailure.response }
+        if let existing = state.identity, existing.user.id != user.id { throw NetworkFailure.accountMismatch }
+        return NetworkIdentity(baseURL: url.absoluteString, token: access, user: user,
+                               refreshToken: refresh, accessExpiresAt: started.addingTimeInterval(900), refreshUncertain: false)
+    }
+
+    private func rotateSession() async throws {
+        guard storageReady, let client, let identity = state.identity, let refresh = identity.refreshToken,
+              identity.refreshUncertain != true else { throw NetworkFailure.sessionUncertain }
+        // Write the uncertainty barrier BEFORE rotation. A crash/lost response cannot replay
+        // a consumed refresh credential or restore yesterday's session on the next launch.
+        state.identity?.refreshUncertain = true
+        try persist()
+        let started = clock()
         do {
-            let url = try ServiceAddress.validated(address)
-            let name = try NicknameRules.validate(nickname)
-            let api = clientFactory(url)
-            let response = try await api.send(APIRequest(method: "POST", path: "/v1/users", body: ["nickname": name]), token: nil)
-            guard let token = response.token, token.count == 43,
-                  let user = response.user, !user.sharingEnabled else { throw NetworkFailure.response }
-            // Keep the returned credential in memory if Keychain fails, and retry that save,
-            // rather than registering again and losing the only copy of the first token.
-            state = SavedNetworkState(identity: NetworkIdentity(baseURL: url.absoluteString, token: token, user: user))
-            client = api
+            let response = try await client.send(APIRequest(method: "POST", path: "/v1/auth/refresh",
+                                                           body: ["refresh_token": refresh]), token: nil)
+            state.identity = try sessionIdentity(response, url: ServiceAddress.validated(identity.baseURL), started: started)
             try persist()
             authenticated = true
-            message = "联网身份已创建，默认不共享。无需共享也能浏览排行榜。"
-            try checkDay(response)
-            try await loadPage()
-            guard ticket == epoch else { return }
-        } catch let error as NicknameRules.ValidationError { message = error.localizedDescription }
-        catch { handle(error) }
+        } catch {
+            authenticated = false
+            // Keep new credentials in memory if their Keychain write failed; retry saves them.
+            if !storageReady { throw NetworkFailure.storage }
+            throw NetworkFailure.sessionUncertain
+        }
     }
 
+    @discardableResult
+    func emailAction(_ action: EmailAction, address: String, email: String = "", password: String = "",
+                     nickname: String = "", proof: String = "") async -> Bool {
+        guard !busy, !privacyRunning, storageReady else { return false }
+        if action == .bind && !isLegacyIdentity { return false }
+        if action != .login && (state.privacy != nil || state.logoutPending == true) {
+            authMessage = NetworkFailure.pendingPrivacy.localizedDescription; return false
+        }
+        busy = true
+        defer { finish() }
+        authMessage = nil
+        do {
+            let url = try ServiceAddress.validated(state.identity?.baseURL ?? address)
+            let api = clientFactory(url)
+            let request = try action.request(email: email, password: password, nickname: nickname, proof: proof)
+            let bearer = isLegacyIdentity && [.bind, .verify, .reset].contains(action) ? state.identity?.token : nil
+            let started = clock()
+            let response = try await api.send(request, token: bearer)
+            if action == .login {
+                let identity = try sessionIdentity(response, url: url, started: started)
+                let retained = state.identity != nil
+                state.identity = identity
+                // A login never enables health sharing or joins a circle. Retain pending
+                // privacy/logout intent for same-account recovery; no cross-account merge.
+                if !retained { state.uploadAllowed = false }
+                client = api
+                try persist()
+                authenticated = true
+                accountEmail = nil
+                clearBoard(); syncedDate = nil; syncedSteps = nil
+                authMessage = "已登录，昵称用于公开展示。健康共享和圈子参与须单独主动同意。"
+            } else if action.sendsMail {
+                guard response.message != nil else { throw NetworkFailure.response }
+                authMessage = "若请求适用于账号，邮件已提交给邮件服务器；请实际查看邮箱。尚未验证成功，也不保证已收件。"
+            } else {
+                guard response.completed == true else { throw NetworkFailure.response }
+                authMessage = action == .verify ? "服务器已确认邮箱验证完成。请使用邮箱和密码登录。" : "服务器已确认完成。请重新登录；密码重置会使旧会话失效。"
+                if state.identity != nil {
+                    state.uploadAllowed = false
+                    defaults.set(true, forKey: Self.uploadStopKey)
+                    authenticated = false
+                    if !isLegacyIdentity { state.identity?.refreshUncertain = true }
+                    clearBoard(); syncedDate = nil; syncedSteps = nil; accountEmail = nil
+                    try persist()
+                }
+            }
+            return true
+        } catch {
+            if error is EmailRules.Invalid || error is NicknameRules.ValidationError {
+                authMessage = error.localizedDescription
+            } else {
+                authMessage = (error as? NetworkFailure ?? .transport).localizedDescription
+                if (error as? NetworkFailure) == .storage { handle(error) }
+            }
+            return false
+        }
+    }
+
+    func loadAccount() async {
+        guard !busy, storageReady, !isLegacyIdentity, state.identity != nil, state.logoutPending != true else { return }
+        busy = true
+        let ticket = epoch, accountTicket = accountReadID
+        defer { finish() }
+        do {
+            let response = try await call(APIRequest(method: "GET", path: "/v1/auth/account"))
+            guard ticket == epoch, accountTicket == accountReadID, state.logoutPending != true else { return }
+            guard response.verified == true, let email = response.email else { throw NetworkFailure.response }
+            accountEmail = email
+        } catch { accountEmail = nil; handle(error) }
+    }
+
+    func hideAccountEmail() { accountReadID = UUID(); accountEmail = nil; authMessage = nil }
+
+    func logout() async {
+        guard storageReady, !isLegacyIdentity, state.identity != nil, !privacyRunning, state.privacy == nil else { return }
+        epoch = UUID()
+        state.uploadAllowed = false; state.logoutPending = true
+        defaults.set(true, forKey: Self.uploadStopKey)
+        authenticated = false; accountEmail = nil
+        clearBoard(); syncedDate = nil; syncedSteps = nil
+        do { try persist() } catch { handle(error); return }
+        privacyRunning = true
+        defer { privacyRunning = false }
+        await waitForIdle()
+        busy = true
+        defer { finish() }
+        do {
+            guard let client, let identity = state.identity else { throw NetworkFailure.storage }
+            // Expired access is permitted for revocation. Do not rotate during logout.
+            let result = try await client.send(APIRequest(method: "POST", path: "/v1/auth/logout-all", body: [:]), token: identity.token)
+            guard result.completed == true else { throw NetworkFailure.response }
+            state = SavedNetworkState(); clientReset()
+            try persist()
+            message = "服务器已确认退出全部设备会话。共享数据仍保留；可重新登录撤回或删除。"
+        } catch {
+            handle(error)
+            message = "退出尚未确认，本机持续停止上传。请重试；若会话失效，重新登录同一账号后再次退出。"
+        }
+    }
+
+    private func clientReset() { client = nil; authenticated = false; accountEmail = nil }
+
     func refresh() async {
-        guard !busy, !privacyRunning, storageReady, state.identity != nil else { return }
+        guard !busy, !privacyRunning, storageReady, state.identity != nil, state.logoutPending != true else { return }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -183,7 +313,11 @@ final class SocialModel: ObservableObject {
             guard ticket == epoch else { return }
             try acceptUser(response)
             try checkDay(response)
-            clearBoard()
+            if isLegacyIdentity {
+                clearBoard()
+                message = NetworkFailure.emailRequired.localizedDescription
+                return
+            }
             try await loadPage()
             guard ticket == epoch else { return }
             message = state.privacy == nil ? "已刷新服务器资料和今日榜单。" : NetworkFailure.pendingPrivacy.localizedDescription
@@ -191,7 +325,7 @@ final class SocialModel: ObservableObject {
     }
 
     func rename(_ input: String) async {
-        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil else { return }
+        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil, state.logoutPending != true else { return }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -201,7 +335,6 @@ final class SocialModel: ObservableObject {
             guard ticket == epoch else { return }
             try acceptUser(response)
             try checkDay(response)
-            clearBoard()
             try await loadPage()
             guard ticket == epoch else { return }
             message = "联网昵称已修改。"
@@ -210,7 +343,7 @@ final class SocialModel: ObservableObject {
     }
 
     func consentToShare() async {
-        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil else { return }
+        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil, state.logoutPending != true else { return }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -308,7 +441,7 @@ final class SocialModel: ObservableObject {
     }
 
     func refreshCircle(more: Bool = false, locate: Bool = false) async {
-        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil else { return }
+        guard !busy, !privacyRunning, storageReady, authenticated, state.privacy == nil, state.logoutPending != true else { return }
         if more && circleNext == nil { return }
         busy = true
         let ticket = epoch
@@ -373,7 +506,7 @@ final class SocialModel: ObservableObject {
     }
 
     func locateMe() async {
-        guard !busy, !privacyRunning, storageReady, authenticated else { return }
+        guard !busy, !privacyRunning, storageReady, authenticated, state.logoutPending != true else { return }
         busy = true
         let ticket = epoch
         defer { finish() }
@@ -393,7 +526,7 @@ final class SocialModel: ObservableObject {
     }
 
     func privacy(_ kind: PrivacyKind, confirmNewAttempt: Bool = false) async {
-        guard state.identity != nil, !privacyRunning else { return }
+        guard state.identity != nil, !privacyRunning, state.logoutPending != true else { return }
         if state.privacy == nil || confirmNewAttempt {
             state.privacy = PrivacyIntent(kind: kind)
         }
@@ -429,7 +562,7 @@ final class SocialModel: ObservableObject {
                 guard response.deleted == true else { throw NetworkFailure.response }
                 state = SavedNetworkState()
                 authenticated = false
-                client = nil
+                clientReset()
                 try persist()
             } else {
                 guard response.user?.sharingEnabled == false else { throw NetworkFailure.response }
@@ -446,12 +579,12 @@ final class SocialModel: ObservableObject {
     }
 
     func forgetLocalCredential() {
-        guard !busy, !privacyRunning, storageReady, state.privacy == nil else { return }
+        guard !busy, !privacyRunning, storageReady, state.privacy == nil, state.logoutPending != true else { return }
         epoch = UUID()
         state = SavedNetworkState()
-        authenticated = false; client = nil
+        clientReset()
         clearBoard(); syncedDate = nil; syncedSteps = nil
-        do { try persist(); message = "已移除此机凭证；这不删除服务端公开数据，且无法找回旧账号。" }
+        do { try persist(); message = "已移除此机凭证；这不删除服务端公开数据。已验证邮箱可重新登录；旧匿名身份丢失凭证后不能恢复。" }
         catch { handle(error) }
     }
 }

@@ -58,7 +58,7 @@ sh scripts/run_backend.sh
 
 生产示例见`backend/email.env.example`注释：仅允许`tls`或强制`starttls`，至少TLS1.2并验证受信任根/域名/有效期；不支持关闭验证、可选STARTTLS、远程明文。`local-capture`只接受字面回环IP且不接受SMTP用户名/密码，不能用于远程主机。不擅自使用外部邮件服务、购买服务或向真实第三方邮箱发信；生产凭据由部署者安全配置。
 
-Rust已支持直接TLS1.2/1.3及本地可信CA，配置见[HTTPS](HTTPS.md)；无TLS的HTTP仍强制仅回环。Swift地址、URLSession和ATS均强制HTTPS，邮箱界面仍由`ios_email_auth`接入，不能把旧匿名表单当作邮箱功能完成。
+Rust已支持直接TLS1.2/1.3及本地可信CA，配置见[HTTPS](HTTPS.md)；无TLS的HTTP仍强制仅回环。Swift地址、URLSession和ATS均强制HTTPS，Swift的“邮箱与账号”表单已接通下列操作；未执行Mac编译及真机验证，不能把源码接通视为平台检查通过。
 
 ```sh
 python3 -m unittest backend.tests.test_email_auth -v
@@ -66,4 +66,16 @@ python3 -m unittest backend.tests.test_email_auth -v
 
 测试使用随机隔离PostgreSQL schema、临时Rust HTTP端口与SMTP端口、忽略目录下的临时邮件文件，结束全部清理；真实走SMTP和HTTP，不跳过数据库。三个固定验收命令仍原样保留于README。
 
-实现参考：[RustCrypto Argon2](https://docs.rs/argon2/0.5.3/argon2/)、[lettre SMTP TLS](https://docs.rs/lettre/0.11.23/lettre/transport/smtp/struct.SmtpTransport.html)、[OWASP 邮箱归属验证](https://cheatsheetseries.owasp.org/cheatsheets/Email_Validation_and_Verification_Cheat_Sheet.html)。未执行Apple平台验证，不宣称iOS已支持本模块账号流程。
+实现参考：[RustCrypto Argon2](https://docs.rs/argon2/0.5.3/argon2/)、[lettre SMTP TLS](https://docs.rs/lettre/0.11.23/lettre/transport/smtp/struct.SmtpTransport.html)、[OWASP 邮箱归属验证](https://cheatsheetseries.owasp.org/cheatsheets/Email_Validation_and_Verification_Cheat_Sheet.html)。Swift账号流程源码及Linux/HTTPS验证见[本轮交审记录](verification-11-ios-email-network.md)；未执行Apple平台编译、XCTest及真机验证。
+
+## iOS入口与会话隐私
+
+今日楼层榜未登录时打开“注册、验证或登录”；已登录或存在旧凭证时打开“账号设置、登录与找回”。操作选择器包含注册、实际邮件凭据验证、重发、登录、忘记密码、重置、旧身份绑定及独立账号恢复。发送邮件成功只提示上游接受，验证成功必须收到`completed:true`，随后需另行登录。没有深链依赖：从实际收到的邮件复制43位凭据，在安全输入框中提交，不放URL查询。
+
+密码和邮件凭据仅供本次请求，不进入模型持久状态或日志；表单提交即清空输入，切后台/关闭表单也清空。邮箱仅账号设置按需读取且只保存在内存，关闭时隐藏；排行榜和圈友仍只显示昵称。会话及原隐私意图仅进入Keychain，设置中可重试安全保存。登录不自动开启共享或圈子，未登录仍能本机运动。
+
+access到期前30秒串行刷新，先安全保存“刷新结果不确定”屏障，成功后以新access/refresh原子替换。网络丢失或进程中断后不重放可能已经消费的refresh，要求同账号登录恢复；写请求不自动重放。新账号登录默认关闭本机上传；同账号恢复保留撤回/删除/退出待办。已有凭证时拒绝用不同用户响应覆盖本机身份。
+
+App选择退出全部设备会话：先停止本机上传，等待在途请求，再请求`logout-all`。未收到完成确认仍显示待退出，保留Keychain意图，重启不上传；会话已失效时先登录同账号，再确认退出。退出不撤回已共享历史，删除前的提示说明此区别；待完成撤回/删除不能被退出绕过。账号永久删除仍通过原隐私版本屏障执行，包含邮箱及认证信息。
+
+旧匿名Keychain格式兼容，绑定与验证使用原Bearer和邮箱邮件证明，完成后登录同一ID，不合并他人账号。旧匿名身份也能继续撤回/删除；未绑定时不能上传或访问公开榜单。邮箱主人遇到他人待验证旧绑定时，先找回，再主动确认“建立独立账号”；原旧身份不被占有、删除或复制。

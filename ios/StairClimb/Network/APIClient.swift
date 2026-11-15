@@ -50,6 +50,12 @@ struct APIEnvelope: Decodable {
     let deletedDays: Int?
     let participating: Bool?
     let circle: CircleChannel?
+    let refreshToken: String?
+    let expiresIn: Int?
+    let completed: Bool?
+    let email: String?
+    let verified: Bool?
+    let message: String?
 
     func validateRules() throws {
         guard timezone == ShanghaiDay.timeZoneID, stepsPerFloor == StepRules.stepsPerFloor,
@@ -65,6 +71,7 @@ enum NetworkFailure: Error, LocalizedError, Equatable {
     case address, response, transport, unauthorized, dayChanged, pageChanged, consentChanged
     case server(String)
     case localData, storage, pendingPrivacy
+    case authentication, invalidCredential, rateLimited, mailUnavailable, emailRequired, sessionUncertain, accountMismatch
 
     var errorDescription: String? {
         switch self {
@@ -79,6 +86,13 @@ enum NetworkFailure: Error, LocalizedError, Equatable {
         case .localData: "没有本次成功读取的当日步数。暂无可读数据或读取失败时不上传零值，请先检查健康权限并重试。"
         case .storage: "安全存储未完成。已停止网络操作，请解锁设备后重试安全存储。"
         case .pendingPrivacy: "隐私操作尚待服务器确认，本机已停止上传。请完成或重新确认该操作。"
+        case .authentication: "邮箱、密码或验证状态不正确。请检查输入，完成邮箱验证后再登录。"
+        case .invalidCredential: "邮件凭据无效、过期或已使用。请重新申请邮件并输入最新凭据。"
+        case .rateLimited: "请求过于频繁，请在5分钟后重试。不要重复提交。"
+        case .mailUnavailable: "邮件服务未配置或未接受本次邮件。未显示发送成功，请稍后重试或检查服务配置。"
+        case .emailRequired: "请先验证邮箱并登录。旧本机身份可在账号页绑定邮箱，健康共享仍需另行同意。"
+        case .sessionUncertain: "会话刷新结果未确认，已停止上传且不会重放刷新凭据。请重新登录同一账号。"
+        case .accountMismatch: "登录的账号与本机保留身份不同，未替换原账号。请先处理原账号数据和待完成操作。"
         }
     }
 }
@@ -148,12 +162,18 @@ final class APIClient: APIRequesting {
         if !(200...299).contains(http.statusCode) {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             let code = (json?["error"] as? [String: Any])?["code"] as? String ?? "unknown"
-            if http.statusCode == 401 { throw NetworkFailure.unauthorized }
             switch code {
+            case "authentication_failed": throw NetworkFailure.authentication
+            case "invalid_credential": throw NetworkFailure.invalidCredential
+            case "rate_limited": throw NetworkFailure.rateLimited
+            case "mail_unavailable": throw NetworkFailure.mailUnavailable
+            case "email_registration_required", "email_verification_required": throw NetworkFailure.emailRequired
             case "day_changed": throw NetworkFailure.dayChanged
             case "leaderboard_changed", "circle_changed": throw NetworkFailure.pageChanged
             case "consent_changed", "sharing_required": throw NetworkFailure.consentChanged
-            default: throw NetworkFailure.server(code)
+            default:
+                if http.statusCode == 401 { throw NetworkFailure.unauthorized }
+                throw NetworkFailure.server(code)
             }
         }
         do {

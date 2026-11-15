@@ -1,0 +1,78 @@
+Source base HEAD: 0d9a059e025f7d352604d9325900e68d1d81827c + current diff
+COMMAND: python3 -m unittest backend.tests.test_email_auth backend.tests.test_https scripts.tests.test_ios_project -v
+test_binding_cannot_merge_existing_email_or_claim_another_identity (backend.tests.test_email_auth.EmailAuthTests.test_binding_cannot_merge_existing_email_or_claim_another_identity) ... ok
+test_concurrent_independent_registration_consumes_proof_once (backend.tests.test_email_auth.EmailAuthTests.test_concurrent_independent_registration_consumes_proof_once) ... ok
+test_concurrent_refresh_has_one_winner (backend.tests.test_email_auth.EmailAuthTests.test_concurrent_refresh_has_one_winner) ... ok
+test_duplicate_unknown_and_known_mail_responses_are_uniform (backend.tests.test_email_auth.EmailAuthTests.test_duplicate_unknown_and_known_mail_responses_are_uniform) ... ok
+test_independent_registration_cannot_unbind_verified_or_nonlegacy_account (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_cannot_unbind_verified_or_nonlegacy_account) ... ok
+test_independent_registration_expiry_restart_and_binding_replay (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_expiry_restart_and_binding_replay) ... ok
+test_independent_registration_invalid_requests_preserve_pending_claim (backend.tests.test_email_auth.EmailAuthTests.test_independent_registration_invalid_requests_preserve_pending_claim) ... ok
+test_legacy_binding_requires_old_device_and_mailbox_preserves_history (backend.tests.test_email_auth.EmailAuthTests.test_legacy_binding_requires_old_device_and_mailbox_preserves_history) ... ok
+test_limits_commit_on_failure_survive_restart_and_expire (backend.tests.test_email_auth.EmailAuthTests.test_limits_commit_on_failure_survive_restart_and_expire) ... ok
+test_logout_and_logout_all_revoke_persistent_sessions (backend.tests.test_email_auth.EmailAuthTests.test_logout_and_logout_all_revoke_persistent_sessions) ... ok
+test_mail_failure_missing_config_and_retry_do_not_fake_delivery (backend.tests.test_email_auth.EmailAuthTests.test_mail_failure_missing_config_and_retry_do_not_fake_delivery) ... ok
+test_mailbox_owner_can_register_independently_of_unverified_legacy_binding (backend.tests.test_email_auth.EmailAuthTests.test_mailbox_owner_can_register_independently_of_unverified_legacy_binding) ... ok
+test_pending_registration_can_be_recovered_by_mailbox_owner (backend.tests.test_email_auth.EmailAuthTests.test_pending_registration_can_be_recovered_by_mailbox_owner) ... ok
+test_production_binary_disables_legacy_and_external_http_listener (backend.tests.test_email_auth.EmailAuthTests.test_production_binary_disables_legacy_and_external_http_listener) ... ok
+test_refresh_rotation_access_expiry_and_replay (backend.tests.test_email_auth.EmailAuthTests.test_refresh_rotation_access_expiry_and_replay) ... ok
+test_registration_verification_and_independent_consent (backend.tests.test_email_auth.EmailAuthTests.test_registration_verification_and_independent_consent) ... ok
+test_resend_invalidates_old_proof_and_expiry_is_authoritative (backend.tests.test_email_auth.EmailAuthTests.test_resend_invalidates_old_proof_and_expiry_is_authoritative) ... ok
+test_reset_is_once_only_and_revokes_all_sessions_after_restart (backend.tests.test_email_auth.EmailAuthTests.test_reset_is_once_only_and_revokes_all_sessions_after_restart) ... ok
+test_salted_passwords_and_hashed_proofs_sessions_no_secret_logs (backend.tests.test_email_auth.EmailAuthTests.test_salted_passwords_and_hashed_proofs_sessions_no_secret_logs) ... ok
+test_source_limit_stops_random_credential_guessing (backend.tests.test_email_auth.EmailAuthTests.test_source_limit_stops_random_credential_guessing) ... ok
+test_starttls_does_not_fall_back_to_plaintext_capture (backend.tests.test_email_auth.EmailAuthTests.test_starttls_does_not_fall_back_to_plaintext_capture) ... ok
+test_two_users_public_models_privacy_barriers_and_account_deletion (backend.tests.test_email_auth.EmailAuthTests.test_two_users_public_models_privacy_barriers_and_account_deletion) ... ok
+test_validation_and_identity_fields_cannot_be_smuggled (backend.tests.test_email_auth.EmailAuthTests.test_validation_and_identity_fields_cannot_be_smuggled) ... ok
+test_waiting_write_rechecks_session_after_logout (backend.tests.test_email_auth.EmailAuthTests.test_waiting_write_rechecks_session_after_logout) ... ok
+test_wrong_unknown_and_unverified_logins_have_same_error (backend.tests.test_email_auth.EmailAuthTests.test_wrong_unknown_and_unverified_logins_have_same_error) ... ok
+test_busy_tls_listener_never_replies_with_plaintext_http (backend.tests.test_https.HTTPSTests.test_busy_tls_listener_never_replies_with_plaintext_http) ... ok
+test_development_ca_reuse_permissions_and_overwrite_guard (backend.tests.test_https.HTTPSTests.test_development_ca_reuse_permissions_and_overwrite_guard) ... ok
+test_expired_certificate_is_rejected (backend.tests.test_https.HTTPSTests.test_expired_certificate_is_rejected) ... ok
+test_hostname_is_verified (backend.tests.test_https.HTTPSTests.test_hostname_is_verified) ... ok
+test_invalid_partial_or_mismatched_configuration_fails_without_fallback (backend.tests.test_https.HTTPSTests.test_invalid_partial_or_mismatched_configuration_fails_without_fallback) ... ok
+test_plaintext_is_rejected_and_handshake_failure_releases_capacity (backend.tests.test_https.HTTPSTests.test_plaintext_is_rejected_and_handshake_failure_releases_capacity) ... ok
+test_tls10_and_tls11_are_not_supported (backend.tests.test_https.HTTPSTests.test_tls10_and_tls11_are_not_supported) ... /home/skn/code/stairclimb/backend/tests/test_https.py:118: DeprecationWarning: ssl.TLSVersion.TLSv1 is deprecated
+  context.minimum_version = context.maximum_version = version
+/home/skn/code/stairclimb/backend/tests/test_https.py:118: DeprecationWarning: ssl.TLSVersion.TLSv1_1 is deprecated
+  context.minimum_version = context.maximum_version = version
+ok
+test_tls_errors_and_body_limits_keep_json_contract (backend.tests.test_https.HTTPSTests.test_tls_errors_and_body_limits_keep_json_contract) ... ok
+test_trusted_ca_tls12_and_tls13_health (backend.tests.test_https.HTTPSTests.test_trusted_ca_tls12_and_tls13_health) ... ok
+test_two_email_users_consent_steps_leaderboard_and_circles_over_https (backend.tests.test_https.HTTPSTests.test_two_email_users_consent_steps_leaderboard_and_circles_over_https) ... ok
+test_unknown_and_wrong_ca_are_rejected (backend.tests.test_https.HTTPSTests.test_unknown_and_wrong_ca_are_rejected) ... ok
+test_anonymous_registration_path_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_anonymous_registration_path_is_rejected) ... ok
+test_credential_redirects_cannot_be_enabled (scripts.tests.test_ios_project.IOSProjectChecks.test_credential_redirects_cannot_be_enabled) ... ok
+test_custom_certificate_trust_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_custom_certificate_trust_bypass_rejected) ... ok
+test_debug_arbitrary_loads_are_still_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_exception_cannot_enter_release (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_legacy_exception_cannot_enter_release) ... ok
+test_debug_local_http_and_all_exception_ranges_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_local_http_and_all_exception_ranges_rejected) ... ok
+test_debug_local_key_alone_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_local_key_alone_rejected) ... ok
+test_direct_client_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_direct_client_bypass_rejected) ... ok
+test_disabled_capability (scripts.tests.test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_http_address_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_http_address_bypass_rejected) ... ok
+test_missing_entitlement (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_icon (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_openstep_duplicate_key_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_persisting_password_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_persisting_password_is_rejected) ... ok
+test_release_ats_bypass (scripts.tests.test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_local_exception_is_also_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (scripts.tests.test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (scripts.tests.test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_secrets_surviving_background_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_secrets_surviving_background_is_rejected) ... ok
+test_test_target_has_no_app_dependency (scripts.tests.test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_tls_minimum_cannot_be_lowered (scripts.tests.test_ios_project.IOSProjectChecks.test_tls_minimum_cannot_be_lowered) ... ok
+test_unlinked_email_tests_are_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unlinked_email_tests_are_rejected) ... ok
+test_unlinked_source (scripts.tests.test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_unwired_email_form_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unwired_email_form_is_rejected) ... ok
+test_valid_project (scripts.tests.test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 66 tests in 114.318s
+
+OK
+EXIT: 0

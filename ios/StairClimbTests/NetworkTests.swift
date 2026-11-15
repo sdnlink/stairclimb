@@ -122,6 +122,8 @@ final class NetworkTransportTests: XCTestCase {
 
     func testHTTPFailuresMapWithoutLeakingServerDetails() async {
         for (status, code, expected) in [(401, "unauthorized", NetworkFailure.unauthorized),
+                                        (401, "authentication_failed", .authentication), (400, "invalid_credential", .invalidCredential),
+                                        (429, "rate_limited", .rateLimited), (503, "mail_unavailable", .mailUnavailable),
                                         (409, "day_changed", .dayChanged), (409, "leaderboard_changed", .pageChanged),
                                         (409, "consent_changed", .consentChanged), (503, "storage_unavailable", .server("storage_unavailable"))] {
             NetworkURLProtocol.handler = { _ in (status, try! JSONSerialization.data(withJSONObject: ["error": ["code": code, "message": "secret internal detail"]])) }
@@ -158,7 +160,8 @@ private final class MockSocialAPI: APIRequesting {
         calls.append(request)
         if let fail { throw fail }
         let user = { NetworkTestData.user(sharing: self.sharing, revision: self.revision, nickname: self.nickname) }
-        if request.path == "/v1/users" { sharing = false; revision = 0; return NetworkTestData.envelope(["user": user(), "token": NetworkTestData.token]) }
+        if request.path == "/v1/auth/login" { sharing = false; revision = 0; return NetworkTestData.envelope(["user": user(), "token": NetworkTestData.token, "refresh_token": String(repeating: "r", count: 43), "expires_in": 900]) }
+        if request.path == "/v1/auth/logout-all" { return NetworkTestData.envelope(["completed": true]) }
         if request.path == "/v1/me/sharing" {
             sharing = request.body?["enabled"] as! Bool
             revision += 1
@@ -220,7 +223,7 @@ final class SocialModelTests: XCTestCase {
         defaults = UserDefaults(suiteName: suite)!
         api = MockSocialAPI(); store = MemorySecureStore(); health = NetworkHealthReader()
         let user = ServerUser(id: "mock-user", nickname: "小楼", sharingEnabled: true, consentRevision: 1)
-        try NetworkVault(store: store).save(SavedNetworkState(identity: NetworkIdentity(baseURL: "https://example.invalid", token: NetworkTestData.token, user: user), uploadAllowed: true))
+        try NetworkVault(store: store).save(SavedNetworkState(identity: NetworkIdentity(baseURL: "https://example.invalid", token: NetworkTestData.token, user: user, refreshToken: String(repeating: "r", count: 43), accessExpiresAt: NetworkTestData.now.addingTimeInterval(900)), uploadAllowed: true))
         model = makeModel()
         local = LocalAppModel(reader: health, vault: IdentityVault(store: MemorySecureStore()), defaults: defaults, clock: { self.now })
         await local.requestHealthAccess()
@@ -273,6 +276,21 @@ final class SocialModelTests: XCTestCase {
         XCTAssertNil(model.syncedDate)
         XCTAssertFalse(model.state.identity!.user.sharingEnabled)
         XCTAssertNil(model.state.privacy)
+    }
+
+    func testLogoutStopsInFlightUploadAndOnlyRevokesAfterItFinishes() async throws {
+        api.suspendSteps = true
+        let upload = Task { await model.sync(local: local) }
+        try await waitForStep()
+        let logout = Task { await model.logout() }
+        for _ in 0..<10_000 { if model.state.logoutPending == true { break }; await Task.yield() }
+        XCTAssertFalse(model.canUpload)
+        XCTAssertFalse(api.calls.contains { $0.path == "/v1/auth/logout-all" })
+        api.pendingStep!.resume(returning: api.stepResponse(101)); api.pendingStep = nil
+        await upload.value; await logout.value
+        XCTAssertNil(model.syncedDate)
+        XCTAssertNil(model.state.identity)
+        XCTAssertEqual(api.calls.last?.path, "/v1/auth/logout-all")
     }
 
     func testOfflineDeleteRemainsPendingAcrossRestartAndNeverAutoEnables() async throws {
@@ -382,11 +400,11 @@ final class SocialModelTests: XCTestCase {
         XCTAssertFalse(restored.canUpload)
     }
 
-    func testFailedRegistrationSaveRetainsTokenInMemoryForSafeRetry() async throws {
+    func testFailedLoginSaveRetainsTokenInMemoryForSafeRetry() async throws {
         let empty = MemorySecureStore()
         empty.failWrites = true
         let candidate = SocialModel(vault: NetworkVault(store: empty), defaults: defaults, clock: { self.now }, clientFactory: { _ in self.api })
-        await candidate.register(address: "https://example.invalid", nickname: "注册者")
+        await candidate.emailAction(.login, address: "https://example.invalid", email: "login@example.test", password: "private password")
         XCTAssertNotNil(candidate.state.identity)
         XCTAssertFalse(candidate.storageReady)
         empty.failWrites = false

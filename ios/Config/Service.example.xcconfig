@@ -1,4 +1,4 @@
-// No credentials. Set the actual address in the app's 今日楼层榜 registration form.
+// No credentials. Set the actual address in the app's 今日楼层榜 email account form.
 // This is a documentation example, not a build-time override of persisted identity.
 // All API addresses require HTTPS, including local Debug development.
 // In xcconfig values, write a URL with the slash escaping below to avoid // comments.

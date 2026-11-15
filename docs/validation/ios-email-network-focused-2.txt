@@ -1,0 +1,12 @@
+Source base HEAD: 0d9a059e025f7d352604d9325900e68d1d81827c + current diff
+COMMAND: python3 scripts/verify_ios_api.py
+PASS verified HTTPS: 3 real email registrations, captured SMTP proofs, verification/replay, login, private account email, no implicit sharing, anonymous bypass rejected
+PASS verified HTTPS: 3 independent users, explicit consent, cumulative/idempotent upload, 3-page traversal, non-first-page me, rename/invalidation, no-record zero, identity tampering
+PASS verified HTTPS: Shanghai midnight, new-day zero, old-date rejection, revoke barrier, delayed enable/upload refusal
+PASS verified HTTPS: delete all shared days, close sharing, stale-delete refusal, delete account/credential invalidation, restart persistence
+PASS verified HTTPS: service storage outage returns 503; no success fabrication
+PASS verified HTTPS: refresh rotation/replay, reset from captured mail, old sessions invalid, reset replay, re-login without sharing, logout-all/revocation, account/email deletion
+PASS verified HTTPS: SMTP failure is an error, no fake delivery or verification
+CLEANUP: ephemeral TLS/SMTP ports closed, temporary private mail/certificates and isolated PostgreSQL schema removed; no secrets printed
+LIMIT: verifies real server contracts used by iOS; does not execute URLSession, SwiftUI, Swift tests, or HealthKit
+EXIT: 0

@@ -9,14 +9,19 @@ struct PrivacyIntent: Codable, Equatable {
 
 struct NetworkIdentity: Codable {
     let baseURL: String
-    let token: String
+    var token: String
     var user: ServerUser
+    // Optional fields preserve existing anonymous Keychain records for explicit binding.
+    var refreshToken: String?
+    var accessExpiresAt: Date?
+    var refreshUncertain: Bool?
 }
 
 struct SavedNetworkState: Codable {
     var identity: NetworkIdentity?
     var uploadAllowed = false
     var privacy: PrivacyIntent?
+    var logoutPending: Bool?
 }
 
 struct NetworkVault {

@@ -201,6 +201,27 @@ def check_project(root):
     require(not re.search(r'serverTrust|SecTrust|URLCredential\s*\(\s*trust:|didReceive\s+challenge', api),
             'URLSession must preserve system certificate trust')
     require('completionHandler(nil)' in api, 'Credential redirects must remain disabled')
+    auth = (ios/'StairClimb/Network/EmailAuth.swift').read_text()
+    social = (ios/'StairClimb/Network/SocialModel.swift').read_text()
+    account_view = (ios/'StairClimb/Views/EmailAccountView.swift').read_text()
+    social_view = (ios/'StairClimb/Views/SocialView.swift').read_text()
+    vault = (ios/'StairClimb/Network/NetworkVault.swift').read_text()
+    require('/v1/users' not in social and 'model.register(' not in social_view,
+            'Obsolete anonymous registration must not be a client path')
+    for action in ['login', 'register', 'verify', 'resend', 'forgot-password', 'reset-password', 'bind', 'register-independent']:
+        require(re.search(r'\b' + re.escape(action) + r'\b', auth), f'Missing email action: {action}')
+    require('EmailAccountView(model: model)' in social_view and 'model.emailAction(' in account_view,
+            'Email forms must be connected to actual social model')
+    require('SecureField(' in account_view and '.onDisappear { clearSecrets()' in account_view
+            and 'phase != .active { clearSecrets()' in account_view, 'Secrets must clear on close/background')
+    require(not re.search(r'\b(?:email|password|proof)\s*:', vault),
+            'Email/password/mail proof must not enter persisted network state')
+    require('var refreshToken: String?' in vault and 'var accessExpiresAt: Date?' in vault,
+            'Persistent session must include refresh and expiry')
+    require('state.identity?.refreshUncertain = true' in social and 'state.logoutPending = true' in social,
+            'Refresh uncertainty and pending logout barriers must persist')
+    require(not re.search(r'\b(?:print|debugPrint|NSLog|Logger)\s*\(', auth + social + account_view + api),
+            'Auth/network sources must not log private fields')
     for config in configurations(tests).values():
         settings = config['buildSettings']
         require(settings.get('TEST_HOST') == '$(BUILT_PRODUCTS_DIR)/StairClimb.app/StairClimb', 'Wrong XCTest host')
@@ -244,7 +265,7 @@ def check_project(root):
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
             'PASS shared scheme, XCTest host/dependency, source/resource membership, icon',
             'PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission',
-            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled',
+            'PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email forms/session/privacy wiring',
             'PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone',
             'LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation']
 

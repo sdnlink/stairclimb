@@ -58,7 +58,7 @@ final class CircleStateTests: XCTestCase {
         let store = MemorySecureStore()
         let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
         let user = try decoder.decode(ServerUser.self, from: JSONSerialization.data(withJSONObject: NetworkTestData.user(sharing: true, revision: 1)))
-        try NetworkVault(store: store).save(SavedNetworkState(identity: NetworkIdentity(baseURL: "https://example.invalid", token: NetworkTestData.token, user: user), uploadAllowed: true))
+        try NetworkVault(store: store).save(SavedNetworkState(identity: NetworkIdentity(baseURL: "https://example.invalid", token: NetworkTestData.token, user: user, refreshToken: String(repeating: "r", count: 43), accessExpiresAt: NetworkTestData.now.addingTimeInterval(900)), uploadAllowed: true))
         let suite = "circle-tests-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

@@ -166,6 +166,30 @@ class IOSProjectChecks(unittest.TestCase):
         self.replace(self.root/'backend/src/domain.rs', 'STEPS_PER_FLOOR: i64 = 100;', 'STEPS_PER_FLOOR: i64 = 99;')
         self.rejects('Rust/reference mismatch: STEPS_PER_FLOOR')
 
+    def test_anonymous_registration_path_is_rejected(self):
+        path = self.root/'ios/StairClimb/Network/SocialModel.swift'
+        path.write_text(path.read_text() + '\nlet path = "/v1/users"\n')
+        self.rejects('Obsolete anonymous registration')
+
+    def test_persisting_password_is_rejected(self):
+        path = self.root/'ios/StairClimb/Network/NetworkVault.swift'
+        path.write_text(path.read_text() + '\nvar password: String?\n')
+        self.rejects('must not enter persisted')
+
+    def test_unwired_email_form_is_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Views/SocialView.swift',
+                     'EmailAccountView(model: model)', 'Text("TODO")')
+        self.rejects('Email forms must be connected')
+
+    def test_unlinked_email_tests_are_rejected(self):
+        (self.root/'ios/StairClimbTests/EmailAuthTests.swift').unlink()
+        self.rejects('Missing referenced file')
+
+    def test_secrets_surviving_background_is_rejected(self):
+        self.replace(self.root/'ios/StairClimb/Views/EmailAccountView.swift',
+                     'phase != .active { clearSecrets()', 'phase != .active { ignored(')
+        self.rejects('Secrets must clear on close/background')
+
     def test_openstep_duplicate_key_rejected(self):
         with self.assertRaisesRegex(CheckFailure, 'Duplicate project key'):
             openstep('{ a = 1; a = 2; }')
