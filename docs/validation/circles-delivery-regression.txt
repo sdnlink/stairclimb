@@ -1,0 +1,84 @@
+source_version=ffeb0fadfe80c609adce6682f55dac10daf28124 + circles_delivery working diff
+COMMAND: python3 -m unittest backend.tests.test_circles backend.tests.test_delivery scripts.tests.test_ios_project -v
+test_band_boundaries_and_stable_daily_channel (backend.tests.test_circles.CircleRulesTests.test_band_boundaries_and_stable_daily_channel) ... ok
+test_account_deletion_cascades_circle_consent_and_rejects_old_token (backend.tests.test_circles.CirclesHTTPTests.test_account_deletion_cascades_circle_consent_and_rejects_old_token) ... ok
+test_all_member_changes_invalidate_pagination (backend.tests.test_circles.CirclesHTTPTests.test_all_member_changes_invalidate_pagination) ... ok
+test_concurrent_participation_upload_and_privacy_changes_are_serialized (backend.tests.test_circles.CirclesHTTPTests.test_concurrent_participation_upload_and_privacy_changes_are_serialized) ... ok
+test_cursor_bound_to_date_channel_version_and_page_size (backend.tests.test_circles.CirclesHTTPTests.test_cursor_bound_to_date_channel_version_and_page_size) ... ok
+test_delete_all_shared_days_removes_member_and_stops_uploads_persistently (backend.tests.test_circles.CirclesHTTPTests.test_delete_all_shared_days_removes_member_and_stops_uploads_persistently) ... ok
+test_disable_before_delayed_enable_and_empty_disable_are_persistent_barriers (backend.tests.test_circles.CirclesHTTPTests.test_disable_before_delayed_enable_and_empty_disable_are_persistent_barriers) ... ok
+test_duplicates_and_concurrent_syncs_do_not_drift_counts (backend.tests.test_circles.CirclesHTTPTests.test_duplicates_and_concurrent_syncs_do_not_drift_counts) ... ok
+test_explicit_participation_validation_and_no_cross_user_authority (backend.tests.test_circles.CirclesHTTPTests.test_explicit_participation_validation_and_no_cross_user_authority) ... ok
+test_invalid_auth_query_and_cursor_inputs_never_expose_members (backend.tests.test_circles.CirclesHTTPTests.test_invalid_auth_query_and_cursor_inputs_never_expose_members) ... ok
+test_midnight_reassigns_without_writes_and_preserves_history (backend.tests.test_circles.CirclesHTTPTests.test_midnight_reassigns_without_writes_and_preserves_history) ... ok
+test_pending_upload_over_midnight_cannot_move_into_new_day_channel (backend.tests.test_circles.CirclesHTTPTests.test_pending_upload_over_midnight_cannot_move_into_new_day_channel) ... ok
+test_registration_and_old_sharing_never_imply_circle_consent (backend.tests.test_circles.CirclesHTTPTests.test_registration_and_old_sharing_never_imply_circle_consent) ... ok
+test_restart_preserves_channel_consents_records_and_current_cursor (backend.tests.test_circles.CirclesHTTPTests.test_restart_preserves_channel_consents_records_and_current_cursor) ... ok
+test_revoke_clears_participation_and_old_grants_cannot_restore_after_restart (backend.tests.test_circles.CirclesHTTPTests.test_revoke_clears_participation_and_old_grants_cannot_restore_after_restart) ... ok
+test_revoked_viewer_cannot_continue_old_circle_page (backend.tests.test_circles.CirclesHTTPTests.test_revoked_viewer_cannot_continue_old_circle_page) ... ok
+test_same_band_same_channel_exact_steps_and_999_1000_boundary (backend.tests.test_circles.CirclesHTTPTests.test_same_band_same_channel_exact_steps_and_999_1000_boundary) ... ok
+test_storage_failure_does_not_claim_join_or_exit_succeeded (backend.tests.test_circles.CirclesHTTPTests.test_storage_failure_does_not_claim_join_or_exit_succeeded) ... ok
+test_sync_migrates_between_bands_and_cannot_leave_duplicate_members (backend.tests.test_circles.CirclesHTTPTests.test_sync_migrates_between_bands_and_cannot_leave_duplicate_members) ... ok
+test_three_pages_and_self_location_are_consistent (backend.tests.test_circles.CirclesHTTPTests.test_three_pages_and_self_location_are_consistent) ... ok
+test_upgrade_old_shared_database_defaults_to_not_participating (backend.tests.test_circles.CirclesHTTPTests.test_upgrade_old_shared_database_defaults_to_not_participating) ... ok
+test_changed_process_identity_refuses_to_signal_either_child (backend.tests.test_delivery.DeliveryTests.test_changed_process_identity_refuses_to_signal_either_child) ... ok
+test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts (backend.tests.test_delivery.DeliveryTests.test_failed_probe_keeps_failure_receipt_and_deletes_its_accounts) ... ok
+test_failed_readiness_stops_only_spawned_children_and_keeps_database (backend.tests.test_delivery.DeliveryTests.test_failed_readiness_stops_only_spawned_children_and_keeps_database) ... ok
+test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot (backend.tests.test_delivery.DeliveryTests.test_occupied_port_is_preserved_and_restart_keeps_session_and_snapshot) ... ok
+test_production_https_captured_mail_probe_cleanup_and_private_artifacts (backend.tests.test_delivery.DeliveryTests.test_production_https_captured_mail_probe_cleanup_and_private_artifacts) ... ok
+test_unavailable_safe_stop_fails_before_spawning_or_writing_state (backend.tests.test_delivery.DeliveryTests.test_unavailable_safe_stop_fails_before_spawning_or_writing_state) ... ok
+test_anonymous_registration_path_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_anonymous_registration_path_is_rejected) ... ok
+test_background_cache_marking_is_required (scripts.tests.test_ios_project.IOSProjectChecks.test_background_cache_marking_is_required) ... ok
+test_credential_redirects_cannot_be_enabled (scripts.tests.test_ios_project.IOSProjectChecks.test_credential_redirects_cannot_be_enabled) ... ok
+test_custom_certificate_trust_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_custom_certificate_trust_bypass_rejected) ... ok
+test_debug_arbitrary_loads_are_still_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_arbitrary_loads_are_still_rejected) ... ok
+test_debug_legacy_exception_cannot_enter_release (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_legacy_exception_cannot_enter_release) ... ok
+test_debug_local_http_and_all_exception_ranges_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_local_http_and_all_exception_ranges_rejected) ... ok
+test_debug_local_key_alone_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_debug_local_key_alone_rejected) ... ok
+test_direct_client_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_direct_client_bypass_rejected) ... ok
+test_disabled_capability (scripts.tests.test_ios_project.IOSProjectChecks.test_disabled_capability) ... ok
+test_http_address_bypass_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_http_address_bypass_rejected) ... ok
+test_missing_circle_midnight_test_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_circle_midnight_test_is_rejected) ... ok
+test_missing_circle_privacy_action_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_circle_privacy_action_is_rejected) ... ok
+test_missing_entitlement (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_entitlement) ... ok
+test_missing_freshness_failure_path_test_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_freshness_failure_path_test_is_rejected) ... ok
+test_missing_icon (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_icon) ... ok
+test_missing_source (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_source) ... ok
+test_missing_success_time_or_cache_binding_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_missing_success_time_or_cache_binding_is_rejected) ... ok
+test_openstep_duplicate_key_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_openstep_duplicate_key_rejected) ... ok
+test_persisting_password_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_persisting_password_is_rejected) ... ok
+test_release_ats_bypass (scripts.tests.test_ios_project.IOSProjectChecks.test_release_ats_bypass) ... ok
+test_release_local_exception_is_also_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_release_local_exception_is_also_rejected) ... ok
+test_rule_drift_from_backend (scripts.tests.test_ios_project.IOSProjectChecks.test_rule_drift_from_backend) ... ok
+test_rule_drift_from_rust_service (scripts.tests.test_ios_project.IOSProjectChecks.test_rule_drift_from_rust_service) ... ok
+test_secrets_surviving_background_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_secrets_surviving_background_is_rejected) ... ok
+test_test_target_has_no_app_dependency (scripts.tests.test_ios_project.IOSProjectChecks.test_test_target_has_no_app_dependency) ... ok
+test_tls_minimum_cannot_be_lowered (scripts.tests.test_ios_project.IOSProjectChecks.test_tls_minimum_cannot_be_lowered) ... ok
+test_unlinked_email_tests_are_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unlinked_email_tests_are_rejected) ... ok
+test_unlinked_source (scripts.tests.test_ios_project.IOSProjectChecks.test_unlinked_source) ... ok
+test_unwired_circle_pagination_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unwired_circle_pagination_is_rejected) ... ok
+test_unwired_circle_tab_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unwired_circle_tab_is_rejected) ... ok
+test_unwired_email_form_is_rejected (scripts.tests.test_ios_project.IOSProjectChecks.test_unwired_email_form_is_rejected) ... ok
+test_valid_project (scripts.tests.test_ios_project.IOSProjectChecks.test_valid_project) ... ok
+test_wrong_bundle_loader (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_bundle_loader) ... ok
+test_wrong_configuration_association (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_configuration_association) ... ok
+test_wrong_scheme_target (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_scheme_target) ... ok
+test_wrong_test_source_membership (scripts.tests.test_ios_project.IOSProjectChecks.test_wrong_test_source_membership) ... ok
+
+----------------------------------------------------------------------
+Ran 64 tests in 28.952s
+
+OK
+exit_status=0
+COMMAND: python3 scripts/check_ios_project.py
+PASS project reference graph: 97 objects; 18 app + 7 XCTest sources
+PASS shared scheme, XCTest host/dependency, source/resource membership, icon
+PASS HealthKit capability/entitlements, Chinese privacy strings, no location permission
+PASS strict HTTPS in Debug/Release, no ATS exceptions, system trust, TLS 1.2, redirects disabled; email/circle actions, consent, freshness display/cache lifecycle and XCTest wiring
+PASS client/backend constants: 100 steps/floor, max 1000000, circle band 1000; Shanghai zone
+LIMIT: static structure only; no Swift compile, XCTest execution, signing, HealthKit or visual validation
+exit_status=0
+COMMAND: git diff --exit-code HEAD -- backend/src backend/migrations backend/Cargo.toml backend/Cargo.lock ios backend/tests/test_delivery.py backend/tests/test_circles.py backend/tests/pg_fixture.py scripts/verify_ios_circles.py scripts/verify_ios_api.py scripts/check_ios_project.py scripts/tests .github/workflows
+exit_status=0
+COMMAND: git diff --check
+exit_status=0

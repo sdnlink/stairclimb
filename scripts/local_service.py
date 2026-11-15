@@ -370,6 +370,150 @@ class LocalService:
                 raise ServiceError('Probe account cleanup failed; inspect private runtime state')
             return result
 
+    def check_circles(self):
+        """Exercise active circles without changing any pre-existing user's data."""
+        with self.locked():
+            receipt = self.directory / 'circle-probe.json'
+            receipt.unlink(missing_ok=True)
+            state = self.status()
+            request = lambda method, path, body=None, token=None, expected=200: self.request(state, method, path, body, token, expected)
+            result = {'status': 'failed', 'checked_at': now(), 'address': state['address'],
+                      'rust_pid': state['processes']['rust']['pid'], 'source_version': state['source_version'],
+                      'binary_sha256': state['binary_sha256'],
+                      'probe_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                      'test_data': 'Three disposable synthetic circle accounts; removed in finally. No HealthKit data.',
+                      'health': request('GET', '/health')}
+            accounts = []  # Credentials stay in memory and are never copied to the receipt.
+
+            def require(condition, message):
+                if not condition:
+                    raise ServiceError(message)
+
+            def update(index, path, body=None, method='PUT', expected=200):
+                account = accounts[index]
+                value = request(method, path, dict(body or {}, expected_revision=account['revision']), account['token'], expected)
+                if 'user' in value:
+                    account['revision'] = value['user']['consent_revision']
+                return value
+
+            def members(index):
+                first, items, seen = None, [], set()
+                cursor = None
+                while True:
+                    query = {'limit': 1, **({'cursor': cursor} if cursor else {})}
+                    page = request('GET', '/v1/circles/current/members?' + urlencode(query), token=accounts[index]['token'])
+                    first = first or page
+                    require(page['participating'] and page['circle'] == first['circle']
+                            and page['snapshot'] == first['snapshot'] and page['total'] == first['total'],
+                            'Circle traversal mixed channels or snapshots')
+                    for entry in page['items']:
+                        require(set(entry) == {'user_id', 'nickname', 'steps', 'floor', 'remaining_steps', 'position', 'is_me'}
+                                and entry['floor'] == entry['steps'] // 100
+                                and entry['remaining_steps'] == 100 - entry['steps'] % 100
+                                and entry['is_me'] == (entry['user_id'] == accounts[index]['id']),
+                                'Unexpected public circle fields or self marker')
+                    items.extend(page['items'])
+                    cursor = page['next_cursor']
+                    if not cursor:
+                        break
+                    require(cursor not in seen, 'Repeated circle cursor')
+                    seen.add(cursor)
+                require(len(items) == first['total'] == len({entry['user_id'] for entry in items})
+                        and [entry['position'] for entry in items] == list(range(1, len(items) + 1)),
+                        'Circle traversal lost or duplicated members')
+                return first, items
+
+            try:
+                date = result['health']['date']
+                for index, steps in enumerate([101, 999, 999]):
+                    account = {'email': 'circle-delivery-' + secrets.token_hex(12) + '@example.test',
+                               'password': secrets.token_urlsafe(32), 'revision': 0, 'deleted': False}
+                    accounts.append(account)
+                    request('POST', '/v1/auth/register', {'email': account['email'], 'password': account['password'],
+                                                         'nickname': f'圈子交付自检{index + 1}'}, expected=202)
+                    request('POST', '/v1/auth/verify', {'token': self.mail_token(account['email']), 'password': account['password']})
+                    login = request('POST', '/v1/auth/login', {'email': account['email'], 'password': account['password']})
+                    account.update(token=login['token'], id=login['user']['id'])
+                    require(not login['user']['sharing_enabled'], 'Registration unexpectedly enabled sharing')
+                    update(index, '/v1/me/sharing', {'enabled': True})
+                    require(not request('GET', '/v1/circles/current', token=account['token'])['participating'],
+                            'Sharing unexpectedly enabled circle participation')
+                    update(index, '/v1/me/steps', {'date': date, 'steps': steps})
+                    update(index, '/v1/me/circle-participation', {'enabled': True})
+
+                first, items = members(0)
+                ids = {account['id'] for account in accounts}
+                require(first['circle']['id'] == date + ':0-999' and ids.issubset({item['user_id'] for item in items}),
+                        'Active circle omitted a probe account')
+                result.update(circles=first, circle_members_traversed=len(items),
+                              leaderboard=request('GET', '/v1/leaderboard?limit=1', token=accounts[0]['token']))
+                location = request('GET', '/v1/circles/current/me?limit=1', token=accounts[0]['token'])
+                own_page = request('GET', '/v1/circles/current/members?' + urlencode({'limit': 1, 'cursor': location['page_cursor']}),
+                                   token=accounts[0]['token'])
+                require(location['entry']['is_me'] and location['entry']['position'] >= 3
+                        and own_page['items'] == [location['entry']], 'Circle self location missed a non-first page')
+                result['me'] = location
+                update(0, '/v1/me/steps', {'date': date, 'steps': 101})
+                require(members(0)[0]['snapshot'] == first['snapshot'], 'Repeated cumulative snapshot changed the circle')
+                update(0, '/v1/me/steps', {'date': date, 'steps': 1000})
+                migrated, moved_items = members(0)
+                low, low_items = members(1)
+                require(migrated['circle']['id'] == date + ':1000-1999'
+                        and accounts[0]['id'] in {item['user_id'] for item in moved_items}
+                        and accounts[0]['id'] not in {item['user_id'] for item in low_items}
+                        and low['total'] == first['total'] - 1, 'Migration left inconsistent circle membership')
+                stale = request('GET', '/v1/circles/current/members?' + urlencode({'limit': 1, 'cursor': first['next_cursor']}),
+                                token=accounts[0]['token'], expected=409)
+                require(stale['error']['code'] == 'circle_changed', 'Old circle cursor was not rejected')
+                result['migrated'] = migrated
+                update(0, '/v1/me/steps', {'date': date, 'steps': 101})
+                require(members(0)[0]['total'] == first['total'], 'Return migration changed membership count')
+
+                old_revision = accounts[0]['revision']
+                exited = update(0, '/v1/me/circle-participation', {'enabled': False})
+                require(not exited['participating'] and not exited['user']['sharing_enabled'], 'Circle exit did not close sharing')
+                for path, body in [('/v1/me/circle-participation', {'enabled': True}),
+                                   ('/v1/me/steps', {'date': date, 'steps': 101})]:
+                    refused = request('PUT', path, dict(body, expected_revision=old_revision), accounts[0]['token'], 409)
+                    require(refused['error']['code'] == 'consent_changed', 'Old request bypassed circle exit')
+                update(0, '/v1/me/sharing', {'enabled': True})
+                require(not request('GET', '/v1/circles/current', token=accounts[0]['token'])['participating'],
+                        'Sharing silently rejoined the circle')
+                update(0, '/v1/me/circle-participation', {'enabled': True})
+                removed = update(0, '/v1/me/steps', method='DELETE')
+                require(removed['deleted_days'] == 1 and not removed['user']['sharing_enabled']
+                        and not request('GET', '/v1/circles/current', token=accounts[0]['token'])['participating'],
+                        'Step deletion did not close circle membership')
+                update(1, '/v1/me', method='DELETE')
+                accounts[1]['deleted'] = True
+                request('GET', '/v1/circles/current', token=accounts[1]['token'], expected=401)
+                remaining, remaining_items = members(2)
+                require(remaining['total'] == first['total'] - 2
+                        and not ({accounts[0]['id'], accounts[1]['id']} & {item['user_id'] for item in remaining_items}),
+                        'Privacy removal left public circle members')
+                result.update(remaining=remaining, privacy_barriers='exit, delayed join/upload, step deletion, account deletion verified',
+                              status='passed')
+            finally:
+                deleted = 0
+                for account in accounts:
+                    try:
+                        if not account.get('token'):
+                            request('POST', '/v1/auth/verify', {'token': self.mail_token(account['email']),
+                                                              'password': account['password']})
+                            account['token'] = request('POST', '/v1/auth/login', {'email': account['email'],
+                                                                                'password': account['password']})['token']
+                        if not account['deleted']:
+                            user = request('GET', '/v1/me', token=account['token'])['user']
+                            request('DELETE', '/v1/me', {'expected_revision': user['consent_revision']}, account['token'])
+                        request('GET', '/v1/me', token=account['token'], expected=401)
+                        deleted += 1
+                    except Exception:
+                        result['status'] = 'failed_cleanup'
+                result['accounts_deleted'] = deleted
+                save(receipt, result)
+            require(deleted == len(accounts), 'Circle probe account cleanup failed; inspect private runtime state')
+            return result
+
 
 def capture(directory):
     service = LocalService(directory)
@@ -387,7 +531,7 @@ def capture(directory):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['start', 'status', 'check', 'stop', '_capture'])
+    parser.add_argument('action', choices=['start', 'status', 'check', 'check-circles', 'stop', '_capture'])
     parser.add_argument('--directory', type=Path, default=DEFAULT)
     parser.add_argument('--port', type=int, default=8787)
     args = parser.parse_args()
@@ -398,7 +542,7 @@ def main():
         if not 0 <= args.port <= 65535:
             raise ServiceError('Port must be in 0..65535')
         service = LocalService(args.directory)
-        value = service.start(args.port) if args.action == 'start' else getattr(service, args.action)()
+        value = service.start(args.port) if args.action == 'start' else getattr(service, args.action.replace('-', '_'))()
         print(json.dumps(value, ensure_ascii=False, indent=2))
     except Exception as error:
         # Never emit exception text from TLS, database, email or authentication helpers.

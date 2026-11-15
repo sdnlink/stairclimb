@@ -1,6 +1,6 @@
 # 本地持续运行交付
 
-需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。原模块定义和历史日志保留。本文是 `delivery_validation` 的运行交付入口；圈子扩展及邮箱最终集成交付仍按台账独立复核，整体需求不在本次宣称完成。
+需求版本8的正式组合为 **Rust + PostgreSQL + Swift/SwiftUI + 邮箱认证 + HTTPS**，覆盖早期Python/SQLite、匿名注册及开发明文HTTP方案。原模块定义和历史日志保留。本文保留已接受的 `delivery_validation` 运行入口，本轮补齐 `circles_delivery`；邮箱最终集成交付仍按台账继续，整体需求不在本次宣称完成。
 
 ## 启动、检查与停止
 
@@ -35,6 +35,25 @@ python3 scripts/postgres_dev.py stop
 ```
 
 此命令只管理 `stairclimb-pg-fe5e36b647`（名称按项目路径摘要生成）及本项目数据卷，不删除数据，不影响无关容器。下次启动保留用户及历史。开发证书和捕获邮件也保留；设备信任不会因停止服务而自动撤销。
+
+## 圈子扩展自检
+
+```sh
+# 在持续运行的正式Rust实例上验证真实圈友；需要先start
+python3 scripts/local_service.py check-circles
+# 隔离schema、测试时钟和临时端口，验证午夜、历史保存、重启及数据库故障
+python3 scripts/verify_ios_circles.py
+# 新增交付探针回归：真实正式Rust入口、PostgreSQL、HTTPS及隔离邮件
+python3 -m unittest backend.tests.test_circle_delivery -v
+```
+
+`check-circles` 单独创建三个明确标为“圈子交付自检”的邮箱账号，经本地捕获邮件验证和登录后分别主动共享、主动参加。使用合成的101/999/999步验证同精确步数必定同圈、每页1人的全部遍历及非首页本人定位；重复累计值不改变频道快照。101→1000→101步验证双向迁圈、旧圈移除和旧游标拒绝。随后验证退出同时停传、延迟参加/上传被拒、重新共享不自动参加、步数删除关闭共享和参与、账号删除及其他圈友保留。它只修改自检账号，不给已有用户写入步数、同意或昵称。并发公开数据变化或执行中跨日会如实失败，不重放旧日上传。
+
+结果保存在权限600的 `.runtime/delivery/circle-probe.json`，包含健康、真实排行榜、圈友页面、本人、迁圈及隐私响应，以及运行中Rust PID/二进制摘要和探针源码摘要；不含邮箱、密码或会话。所有已创建账号在finally中尝试删除，核对旧凭证401，并记录实际删除数量；失败返回非零，旧成功收据先移除，清理失败明确标为 `failed_cleanup`。本地捕获邮件仍是私有运行文件。自检会短暂改变公开分页版本，不应与其他验收操作同时运行。
+
+每天以Asia/Shanghai 00:00派生当日零值和新频道，1000步一个区间，同组即同日频道；历史记录保留，不改写为0，不清除Apple Health原始记录。旧日上传及游标被拒；小圈展示真实成员，不虚构圈友。接口、同意与退出/删除规则继续遵循[API文档](API.md#每日圈子与参与隐私)。午夜和503场景只在隔离测试实例上验证，不修改持续实例的时钟或数据库结构。
+
+本轮源码基线为 `ffeb0fadfe80c609adce6682f55dac10daf28124` 加圈子交付增量；后端Rust、数据库迁移及iOS源码保持原样。聚焦测试和真实HTTPS圈子探针日志见 `docs/validation/circles-delivery-focused.txt`，一次相关回归及Linux工程检查见 `circles-delivery-regression.txt`，持续实例实际请求和停止方式见 `circles-delivery-running.txt`。旧 `delivery-*` 和原生圈子证据原样保留；三个固定命令仍由Watcher对本候选运行，不冒称本轮已独立接受。
 
 ## 连接与证书
 
