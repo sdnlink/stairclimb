@@ -1,0 +1,56 @@
+Backend report handoff: evidence correction only; requirement version 8.
+$ git rev-parse HEAD
+c43523f470acefddba92aa97d413a4e07c37ddec
+exit_status=0
+$ git diff --exit-code 7b940eb9fbb839396a1437351e0abff1df257608 -- backend scripts README.md REQUIREMENTS.md docs/API.md docs/DATA_ACCESS.md docs/EMAIL_AUTH.md docs/HTTPS.md
+
+exit_status=0
+$ sha256sum -c docs/validation/pool-timing-sources.sha256
+backend/Cargo.toml: 成功
+backend/Cargo.lock: 成功
+backend/development.env.example: 成功
+backend/src/auth.rs: 成功
+backend/src/bin/test_server.rs: 成功
+backend/src/domain.rs: 成功
+backend/src/http.rs: 成功
+backend/src/lib.rs: 成功
+backend/src/mail.rs: 成功
+backend/src/main.rs: 成功
+backend/src/pool.rs: 成功
+backend/src/storage.rs: 成功
+backend/src/tls.rs: 成功
+backend/migrations/001_initial.sql: 成功
+backend/migrations/002_email_auth.sql: 成功
+backend/migrations/003_data_access.sql: 成功
+backend/tests/pg_fixture.py: 成功
+backend/tests/test_circles.py: 成功
+backend/tests/test_data_access.py: 成功
+backend/tests/test_email_auth.py: 成功
+backend/tests/test_https.py: 成功
+backend/tests/test_identity.py: 成功
+backend/tests/test_launcher.py: 成功
+backend/tests/test_migration.py: 成功
+backend/tests/test_social.py: 成功
+scripts/benchmark_data_access.py: 成功
+scripts/postgres_dev.py: 成功
+scripts/import_sqlite.py: 成功
+scripts/run_backend.sh: 成功
+README.md: 成功
+docs/API.md: 成功
+docs/DATA_ACCESS.md: 成功
+exit_status=0
+Saved run, not re-executed: docs/validation/backend-current-revalidation-focused.txt; tests=5; exit_status=0; source_version=c43523f470acefddba92aa97d413a4e07c37ddec
+sha256=19e94ad8906249da4db8090454a7e945101aefb03d752cd61545bd13fc738808
+Saved run, not re-executed: docs/validation/backend-current-revalidation-regression.txt; tests=73; exit_status=0; source_version=c43523f470acefddba92aa97d413a4e07c37ddec
+sha256=7494bf286dfd04bea38af50d93b3ee054ff6c86a047de5afe3190ad533f21442
+Read-only historical Watcher receipt/log verification, not current acceptance:
+round=26; complete=true; source_changed=false; tree=6ff55847a4f615e553df90929dee2a3133b523d7decc6f3aa8f08d8b21d81ee0
+/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/026-check-01.log: sha256=9c63c803263a9f6cd5019b0451a91c2a6ca30bbc5b1785c8d12880b5e3491735 MATCH
+/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/026-check-02.log: sha256=3df60eca9d6069ed21a9c74dff79659abc5fabd433975c7967848f66ff416d1f MATCH
+/home/skn/code/auto_moniter/.auto-moniter/console/runs/a04eafa94e944f3fbc3f4e2e3b728b91/026-check-03.log: sha256=95a69fb52d8144d610c31d84008b1d017014e4ca22b1cb5d2c68e34cc2bcf1c1 MATCH
+$ git diff --check
+
+exit_status=0
+Remaining platform limitation: Swift/Xcode/iPhone validations not executed; unchanged environment evidence retained.
+No business implementation, test, configuration, Git ref/index or monitor state edits; no test/build rerun.
+verification_exit_status=0

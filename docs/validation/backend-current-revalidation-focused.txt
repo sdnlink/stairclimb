@@ -1,0 +1,14 @@
+source_version=c43523f470acefddba92aa97d413a4e07c37ddec
+$ python3 -m unittest backend.tests.test_data_access -v
+test_noop_write_does_not_take_public_revision_lock (backend.tests.test_data_access.DataAccessTests.test_noop_write_does_not_take_public_revision_lock) ... ok
+test_pool_exhaustion_is_bounded_http_error_and_leases_return (backend.tests.test_data_access.DataAccessTests.test_pool_exhaustion_is_bounded_http_error_and_leases_return) ... ok
+test_queued_upload_rereads_consent_after_user_row_is_granted (backend.tests.test_data_access.DataAccessTests.test_queued_upload_rereads_consent_after_user_row_is_granted) ... ok
+test_scaled_sql_pages_ties_zero_values_own_location_and_snapshot_invalidation (backend.tests.test_data_access.DataAccessTests.test_scaled_sql_pages_ties_zero_values_own_location_and_snapshot_invalidation) ... ok
+test_waiting_user_does_not_block_other_user_and_revocation_blocks_replay (backend.tests.test_data_access.DataAccessTests.test_waiting_user_does_not_block_other_user_and_revocation_blocks_replay) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.384s
+
+OK
+
+exit_status=0
