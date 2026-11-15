@@ -14,7 +14,6 @@ struct ProgressViewScreen: View {
     @State private var editingIdentity = false
     @State private var showingMotionHelp = false
     private let stepPulse = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
-    private let datePulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var busy: Bool { model.phase == .loading || model.phase == .requesting }
 
@@ -58,11 +57,18 @@ struct ProgressViewScreen: View {
         }
         .onReceive(stepPulse) { _ in
             guard scenePhase == .active, model.hasRequestedMotionAccess else { return }
-            Task { await model.activate() }
+            Task {
+                if model.updateDayIfNeeded() { await model.activate() }
+                else { await model.refresh() }
+            }
         }
-        .onReceive(datePulse) { _ in
+        .task(id: "\(model.day.date):\(scenePhase == .active)") {
             guard scenePhase == .active else { return }
-            if model.updateDayIfNeeded() { Task { await model.activate() } }
+            let remaining = max(0.5, model.day.end.timeIntervalSinceNow + 0.05)
+            do {
+                try await Task.sleep(for: .seconds(remaining))
+                if model.updateDayIfNeeded() { await model.activate() }
+            } catch {}
         }
     }
 

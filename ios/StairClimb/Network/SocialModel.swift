@@ -36,8 +36,11 @@ final class SocialModel: ObservableObject {
     @Published private(set) var chatBefore: Int?
     @Published private(set) var chatNotice: String?
     @Published private(set) var blockedUsers: [BlockedCircleUser] = []
+    @Published private(set) var chatPolling = false
     private var chatWatermark: Int?
     private var chatEpoch = UUID()
+
+    var showGlobalBusy: Bool { busy && !chatPolling }
 
     let pageSize = 20
     private let vault: NetworkVault
@@ -700,13 +703,17 @@ extension SocialModel {
         if chatMessages.count > 500 { chatMessages.removeFirst(chatMessages.count - 500) }
     }
 
-    func refreshChat(older: Bool = false, reset: Bool = false) async {
+    func refreshChat(older: Bool = false, reset: Bool = false, background: Bool = false) async {
         dayChangedIfNeeded()
         guard canChat, !busy, let channel = circle?.id else { return }
         if older && chatBefore == nil { return }
+        if background { chatPolling = true }
         busy = true
         let ticket = epoch, chatTicket = chatEpoch
-        defer { finish() }
+        defer {
+            if background { chatPolling = false }
+            finish()
+        }
         do {
             var query = [URLQueryItem(name: "circle_id", value: channel), URLQueryItem(name: "limit", value: "20")]
             if older, let before = chatBefore { query.append(URLQueryItem(name: "before", value: String(before))) }
@@ -739,6 +746,7 @@ extension SocialModel {
 
     // A retry uses the same client UUID. A timed-out send never silently duplicates a message.
     func sendChat(text: String, replyTo: Int?, clientID: UUID) async -> Bool {
+        if chatPolling { await waitForIdle() }
         dayChangedIfNeeded()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canChat, !busy, !trimmed.isEmpty, trimmed.unicodeScalars.count <= 1000, let channel = circle?.id else { return false }

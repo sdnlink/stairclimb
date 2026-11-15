@@ -9,7 +9,10 @@ use postgres::GenericClient;
 use rand::RngCore;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    OnceLock,
+};
 use uuid::Uuid;
 
 pub const ACCESS_SECONDS: i64 = 900;
@@ -41,13 +44,13 @@ fn unauthorized() -> ApiError {
 pub(crate) fn bearer(header: Option<&str>) -> Result<&str> {
     header
         .and_then(|s| s.strip_prefix("Bearer "))
-        .filter(|s| matches(r"^[A-Za-z0-9_-]{43}$", s))
+        .filter(|s| s.len() == 43 && is_url_safe_b64(s))
         .ok_or_else(|| ApiError::new(401, "unauthorized", "身份凭证无效，请重新登录"))
 }
 fn proof(body: &Value, field: &str) -> Result<String> {
     body[field]
         .as_str()
-        .filter(|s| matches(r"^[A-Za-z0-9_-]{43}$", s))
+        .filter(|s| s.len() == 43 && is_url_safe_b64(s))
         .map(str::to_owned)
         .ok_or_else(invalid_proof)
 }
@@ -60,11 +63,38 @@ pub fn email(value: &Value) -> Result<String> {
         .to_ascii_lowercase();
     let (local, domain) = input.rsplit_once('@').ok_or_else(invalid)?;
     if input.len() > 254
+        || local.is_empty()
         || local.len() > 64
         || local.starts_with('.')
         || local.ends_with('.')
         || local.contains("..")
-        || !matches(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$", local)
+        || !local.bytes().all(|b| {
+            matches!(
+                b,
+                b'a'..=b'z'
+                    | b'0'..=b'9'
+                    | b'.'
+                    | b'!'
+                    | b'#'
+                    | b'$'
+                    | b'%'
+                    | b'&'
+                    | b'\''
+                    | b'*'
+                    | b'+'
+                    | b'/'
+                    | b'='
+                    | b'?'
+                    | b'^'
+                    | b'_'
+                    | b'`'
+                    | b'{'
+                    | b'|'
+                    | b'}'
+                    | b'~'
+                    | b'-'
+            )
+        })
         || !domain.contains('.')
         || domain.split('.').any(|s| {
             s.is_empty()
@@ -166,14 +196,17 @@ fn issue_session(tx: &mut impl GenericClient, id: &str, now: i64) -> Result<Valu
 impl Application {
     /// Separate committed counters: failed credentials/SMTP transactions cannot undo limits.
     fn auth_limit(&self, action: &str, source: &str, subject: &str) -> Result<()> {
+        static SWEEP_TICK: AtomicU64 = AtomicU64::new(0);
         let now = self.clock.now()?.timestamp();
         let mut db = self.connect()?;
         let mut tx = db.transaction()?;
         tx.batch_execute("SET LOCAL statement_timeout='5000ms'; SET LOCAL lock_timeout='4000ms'")?;
-        tx.execute(
-            "DELETE FROM auth_limits WHERE window_start < $1",
-            &[&(now - 86400)],
-        )?;
+        if SWEEP_TICK.fetch_add(1, Ordering::Relaxed) % 64 == 0 {
+            tx.execute(
+                "DELETE FROM auth_limits WHERE key IN (SELECT key FROM auth_limits WHERE window_start < $1 LIMIT 200)",
+                &[&(now - 86400)],
+            )?;
+        }
         let mut keys = vec![
             (digest(&format!("{action}:source:{source}")), 30),
             (digest(&format!("{action}:subject:{subject}")), 5),

@@ -54,6 +54,42 @@ pub fn merge(mut value: Value, other: Value) -> Value {
 pub fn matches(pattern: &str, text: &str) -> bool {
     Regex::new(pattern).unwrap().is_match(text)
 }
+pub(crate) fn is_url_safe_b64(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+pub(crate) fn is_ymd_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[8..10].iter().all(u8::is_ascii_digit)
+}
+pub(crate) fn is_snapshot_id(s: &str, max_version_digits: Option<usize>) -> bool {
+    let Some((date, ver)) = s.split_once('.') else {
+        return false;
+    };
+    is_ymd_date(date)
+        && !ver.is_empty()
+        && max_version_digits.map_or(true, |max| ver.len() <= max)
+        && ver.bytes().all(|b| b.is_ascii_digit())
+}
+fn is_channel_id(s: &str) -> bool {
+    let Some((date, band)) = s.split_once(':') else {
+        return false;
+    };
+    let Some((min_s, max_s)) = band.split_once('-') else {
+        return false;
+    };
+    is_ymd_date(date)
+        && !min_s.is_empty()
+        && !max_s.is_empty()
+        && min_s.bytes().all(|b| b.is_ascii_digit())
+        && max_s.bytes().all(|b| b.is_ascii_digit())
+}
 pub fn progress(steps: i64) -> Result<Value> {
     if !(0..=MAX_STEPS).contains(&steps) {
         return Err(ApiError::new(
@@ -125,7 +161,7 @@ pub fn exact_fields(value: &Value, fields: &[&str]) -> Result<()> {
 pub fn current_date(value: &Value, context: &Value) -> Result<String> {
     let s = value
         .as_str()
-        .filter(|s| matches(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", s))
+        .filter(|s| is_ymd_date(s))
         .ok_or(ApiError::new(422, "invalid_date", "日期须为YYYY-MM-DD"))?;
     if NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err() || s.starts_with("0000") {
         return Err(ApiError::new(422, "invalid_date", "日期无效"));
@@ -142,7 +178,7 @@ pub fn current_date(value: &Value, context: &Value) -> Result<String> {
 pub fn page_size(value: Option<&String>) -> Result<i64> {
     match value {
         None => Ok(20),
-        Some(s) if matches(r"^[0-9]{1,3}$", s) => s
+        Some(s) if (1..=3).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit()) => s
             .parse::<i64>()
             .ok()
             .filter(|n| (1..=100).contains(n))
@@ -167,7 +203,7 @@ pub fn read_cursor(value: &str, snapshot: &str, channel: Option<&str>, limit: i6
         "invalid_cursor",
         "分页游标无效或每页数量已改变，请刷新",
     );
-    if !matches(r"^[A-Za-z0-9_-]+$", value)
+    if !is_url_safe_b64(value)
         || value.len() > if channel.is_some() { 384 } else { 256 }
     {
         return Err(invalid);
@@ -181,7 +217,7 @@ pub fn read_cursor(value: &str, snapshot: &str, channel: Option<&str>, limit: i6
     }
     let saved = array[0]
         .as_str()
-        .filter(|s| matches(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$", s))
+        .filter(|s| is_snapshot_id(s, None))
         .ok_or(invalid.clone())?;
     let offset = array[idx]
         .as_i64()
@@ -195,7 +231,7 @@ pub fn read_cursor(value: &str, snapshot: &str, channel: Option<&str>, limit: i6
         Some(
             array[1]
                 .as_str()
-                .filter(|s| matches(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}:[0-9]+-[0-9]+$", s))
+                .filter(|s| is_channel_id(s))
                 .ok_or(invalid.clone())?,
         )
     } else {

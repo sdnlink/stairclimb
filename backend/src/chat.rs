@@ -84,12 +84,26 @@ impl Application {
             body["circle_id"].as_str()
         }
         .ok_or_else(invalid)?;
+        let is_write = method != "GET";
         let mut db = self.connect()?;
-        // READ COMMITTED after user lock: logout, consent and step changes cannot race a send.
-        let mut tx = begin(&mut db, true)?;
-        let candidate = authenticate(&mut tx, authorization, self.clock.now()?.timestamp(), false)?;
-        lock_user(&mut tx, &candidate.id)?;
-        let user = authenticate(&mut tx, authorization, self.clock.now()?.timestamp(), false)?;
+        // Writers lock the user and hold an exclusive channel advisory lock.
+        // Readers use READ COMMITTED + shared channel advisory lock so polls run concurrently
+        // without blocking each other or step syncs, while still waiting on mid-commit writes.
+        let mut tx = if is_write {
+            begin(&mut db, true)?
+        } else {
+            let mut tx = db.build_transaction().read_only(true).start()?;
+            tx.batch_execute("SET LOCAL statement_timeout='5000ms'; SET LOCAL lock_timeout='4000ms'")?;
+            tx
+        };
+        let user = if is_write {
+            let candidate =
+                authenticate(&mut tx, authorization, self.clock.now()?.timestamp(), false)?;
+            lock_user(&mut tx, &candidate.id)?;
+            authenticate(&mut tx, authorization, self.clock.now()?.timestamp(), false)?
+        } else {
+            authenticate(&mut tx, authorization, self.clock.now()?.timestamp(), false)?
+        };
         let context = day_context(self.clock.now()?);
         let date = context["date"].as_str().unwrap();
         let current = channel(&mut tx, &user, date)?;
@@ -100,11 +114,13 @@ impl Application {
                 "今日频道已变化，请刷新后重新发送",
             ));
         }
-        // Serialize this channel's writes and polling watermark; another channel stays independent.
-        tx.query_one(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,7104))",
-            &[&current],
-        )?;
+        // Serialize this channel's writes; readers share the channel lock.
+        let lock_sql = if is_write {
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,7104))"
+        } else {
+            "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,7104))"
+        };
+        tx.query_one(lock_sql, &[&current])?;
         if day_context(self.clock.now()?)["date"] != context["date"] {
             return Err(ApiError::new(
                 409,

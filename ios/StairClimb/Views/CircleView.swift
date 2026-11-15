@@ -92,7 +92,7 @@ struct CircleView: View {
                         if let notice = model.circleNotice { Text(notice).font(.subheadline) }
                     }
                 }
-                if model.busy { HStack { ProgressView(); Text("正在确认服务器状态") } }
+                if model.showGlobalBusy { HStack { ProgressView(); Text("正在确认服务器状态") } }
                 if let error = model.circleError { Section("未完成") { Text(error); Text("请检查网络后刷新，旧频道不会当作今日结果。") } }
                 if let message = model.message { Section("操作状态") { Text(message).font(.caption) } }
             }
@@ -199,10 +199,10 @@ private struct CircleConversation: View {
                         }
                     }
                 }.buttonStyle(.borderedProminent)
-                    .disabled(model.busy || !model.canChat || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.unicodeScalars.count > 1000)
+                    .disabled(model.showGlobalBusy || !model.canChat || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.unicodeScalars.count > 1000)
             }
             if let notice = model.chatNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            Button("刷新聊天") { Task { await model.refreshChat(reset: true) } }.disabled(model.busy)
+            Button("刷新聊天") { Task { await model.refreshChat(reset: true) } }.disabled(model.showGlobalBusy)
             Text("停留本页时约每5秒刷新；迁圈或跨日后进入新的聊天频道。")
                 .font(.caption2).foregroundStyle(.secondary)
             DisclosureGroup("屏蔽管理") {
@@ -224,7 +224,7 @@ private struct CircleConversation: View {
         .task(id: polling) {
             guard polling else { return }
             while !Task.isCancelled {
-                await model.refreshChat()
+                await model.refreshChat(background: true)
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }

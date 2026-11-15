@@ -186,8 +186,8 @@ impl Application {
                 && matches!(path, "/v1/me/sharing" | "/v1/me/circle-participation")
                 && body["enabled"] == false);
         let legacy_ok = self.legacy_test_mode || privacy;
-        let context = day_context(self.clock.now()?);
         if method == "GET" && path == "/health" {
+            let context = day_context(self.clock.now()?);
             return Ok((
                 200,
                 merge(
@@ -211,7 +211,9 @@ impl Application {
             let token = URL_SAFE_NO_PAD.encode(bytes);
             let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
             let id = Uuid::new_v4().simple().to_string();
-            let now = timestamp(self.clock.now()?);
+            let now_ts = self.clock.now()?;
+            let context = day_context(now_ts);
+            let now = timestamp(now_ts);
             let mut db = self.connect()?;
             let mut tx = begin(&mut db, true)?;
             tx.execute(
@@ -227,13 +229,12 @@ impl Application {
         }
         if method == "GET" && path == "/v1/me" {
             let mut db = self.connect()?;
-            let user = authenticate(
-                &mut *db,
-                authorization,
-                self.clock.now()?.timestamp(),
-                legacy_ok,
-            )?;
-            return Ok((200, merge(json!({"user":user.public()}), context)));
+            let now = self.clock.now()?;
+            let user = authenticate(&mut *db, authorization, now.timestamp(), legacy_ok)?;
+            return Ok((
+                200,
+                merge(json!({"user":user.public()}), day_context(now)),
+            ));
         }
         if method == "PATCH" && path == "/v1/me" {
             exact_fields(body, &["nickname"])?;
@@ -250,7 +251,13 @@ impl Application {
             }
             let user = refresh_user(&mut tx, &user.id)?;
             tx.commit()?;
-            return Ok((200, merge(json!({"user":user.public()}), context)));
+            return Ok((
+                200,
+                merge(
+                    json!({"user":user.public()}),
+                    day_context(self.clock.now()?),
+                ),
+            ));
         }
         if method == "PUT" && path == "/v1/me/sharing" {
             exact_fields(body, &["enabled", "expected_revision"])?;
@@ -276,7 +283,13 @@ impl Application {
             }
             let user = refresh_user(&mut tx, &user.id)?;
             tx.commit()?;
-            return Ok((200, merge(json!({"user":user.public()}), context)));
+            return Ok((
+                200,
+                merge(
+                    json!({"user":user.public()}),
+                    day_context(self.clock.now()?),
+                ),
+            ));
         }
         if method == "PUT" && path == "/v1/me/steps" {
             exact_fields(body, &["date", "steps", "expected_revision"])?;
@@ -463,7 +476,7 @@ impl Application {
             "leaderboard_changed"
         };
         if let Some(snapshot) = params.get("snapshot") {
-            if !matches(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{1,19}$", snapshot) {
+            if !is_snapshot_id(snapshot, Some(19)) {
                 return Err(ApiError::new(422, "invalid_snapshot", "版本无效"));
             }
         }
@@ -538,15 +551,13 @@ impl Application {
             .unwrap_or(MAX_STEPS);
         let channel_id = channel.as_ref().map(|c| c["id"].as_str().unwrap());
         // COUNT and bounded page/own-row queries share one repeatable-read snapshot.
-        // Ranking/sorting may scan the cohort in PostgreSQL; only LIMIT rows cross the wire.
-        let visible = "WITH visible AS (SELECT u.id AS user_id,u.nickname,COALESCE(s.steps,0) AS steps FROM users u LEFT JOIN daily_steps s ON s.user_id=u.id AND s.date=$1 LEFT JOIN circle_participation p ON p.user_id=u.id WHERE u.sharing_enabled=1 AND (NOT $2::boolean OR p.enabled=1) AND COALESCE(s.steps,0) BETWEEN $3 AND $4)";
-        let total: i64 = tx
-            .query_one(
-                &format!("{visible} SELECT count(*) FROM visible"),
-                &[&date, &is_circle, &lower, &upper],
-            )?
-            .get(0);
-        common["total"] = json!(total);
+        // When lower > 0, an INNER JOIN on daily_steps lets PostgreSQL start from
+        // daily_steps_date_steps_user instead of scanning all shared users.
+        let visible = if lower > 0 {
+            "WITH visible AS (SELECT u.id AS user_id,u.nickname,s.steps AS steps FROM daily_steps s JOIN users u ON u.id=s.user_id LEFT JOIN circle_participation p ON p.user_id=u.id WHERE s.date=$1 AND u.sharing_enabled=1 AND (NOT $2::boolean OR p.enabled=1) AND s.steps BETWEEN $3 AND $4)"
+        } else {
+            "WITH visible AS (SELECT u.id AS user_id,u.nickname,COALESCE(s.steps,0) AS steps FROM users u LEFT JOIN daily_steps s ON s.user_id=u.id AND s.date=$1 LEFT JOIN circle_participation p ON p.user_id=u.id WHERE u.sharing_enabled=1 AND (NOT $2::boolean OR p.enabled=1) AND COALESCE(s.steps,0) BETWEEN $3 AND $4)"
+        };
         let ranked = format!("{visible}, ranked AS (SELECT *,RANK() OVER(ORDER BY steps DESC) AS rank,ROW_NUMBER() OVER(ORDER BY steps DESC,user_id ASC) AS position FROM visible)");
         let entry = |r: &Row| -> Value {
             let id: String = r.get("user_id");
@@ -561,6 +572,13 @@ impl Application {
             e
         };
         if path.ends_with("/me") || path == "/v1/circles/current" {
+            let total: i64 = tx
+                .query_one(
+                    &format!("{visible} SELECT count(*) FROM visible"),
+                    &[&date, &is_circle, &lower, &upper],
+                )?
+                .get(0);
+            common["total"] = json!(total);
             let own = tx.query_opt(
                 &format!("{ranked} SELECT * FROM ranked WHERE user_id=$5"),
                 &[&date, &is_circle, &lower, &upper, &viewer.id],
@@ -581,13 +599,23 @@ impl Application {
         } else {
             0
         };
+        let rows = tx.query(
+            &format!("{ranked} SELECT *, COUNT(*) OVER() AS total_count FROM ranked ORDER BY position LIMIT $5 OFFSET $6"),
+            &[&date, &is_circle, &lower, &upper, &limit, &offset],
+        )?;
+        let total: i64 = if let Some(first) = rows.first() {
+            first.get("total_count")
+        } else {
+            tx.query_one(
+                &format!("{visible} SELECT count(*) FROM visible"),
+                &[&date, &is_circle, &lower, &upper],
+            )?
+            .get(0)
+        };
         if offset > 0 && offset >= total {
             return Err(ApiError::new(422, "invalid_cursor", "分页位置无效，请刷新"));
         }
-        let rows = tx.query(
-            &format!("{ranked} SELECT * FROM ranked ORDER BY position LIMIT $5 OFFSET $6"),
-            &[&date, &is_circle, &lower, &upper, &limit, &offset],
-        )?;
+        common["total"] = json!(total);
         let items: Vec<Value> = rows.iter().map(entry).collect();
         let next = offset + items.len() as i64;
         let next_cursor = if next < total {

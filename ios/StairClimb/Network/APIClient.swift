@@ -65,11 +65,13 @@ struct APIEnvelope: Decodable {
     let hasMore: Bool?
     let blockedUsers: [BlockedCircleUser]?
 
+    private static let isoFormatter = ISO8601DateFormatter()
+
     func validateRules() throws {
         guard timezone == ShanghaiDay.timeZoneID, stepsPerFloor == StepRules.stepsPerFloor,
               maxSteps == StepRules.maximumSteps, circleBandSteps == StepRules.circleBandSteps,
-              let start = ISO8601DateFormatter().date(from: dayStart),
-              let end = ISO8601DateFormatter().date(from: dayEnd) else { throw NetworkFailure.response }
+              let start = Self.isoFormatter.date(from: dayStart),
+              let end = Self.isoFormatter.date(from: dayEnd) else { throw NetworkFailure.response }
         let day = ShanghaiDay(containing: start)
         guard day.date == date, day.start == start, day.end == end else { throw NetworkFailure.response }
     }
@@ -133,6 +135,12 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
 
 @MainActor
 final class APIClient: APIRequesting {
+    private static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return d
+    }()
+
     private let baseURL: URL
     private let session: URLSession
 
@@ -194,9 +202,7 @@ final class APIClient: APIRequesting {
             }
         }
         do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let result = try decoder.decode(APIEnvelope.self, from: data)
+            let result = try Self.decoder.decode(APIEnvelope.self, from: data)
             try result.validateRules()
             return result
         } catch { throw NetworkFailure.response }

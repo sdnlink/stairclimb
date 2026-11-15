@@ -9,7 +9,7 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 struct Unique(Value);
@@ -73,16 +73,17 @@ impl<'de> Deserialize<'de> for Unique {
         d.deserialize_any(UniqueVisitor)
     }
 }
+fn has_surrogate_escape(raw: &[u8]) -> bool {
+    static SURROGATE_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = SURROGATE_RE.get_or_init(|| {
+        regex::Regex::new(r"\\u[dD][89aAbBcCdDeEfF][0-9a-fA-F]{2}").unwrap()
+    });
+    re.is_match(&String::from_utf8_lossy(raw))
+}
 fn parse_json(raw: &[u8]) -> Result<Value> {
     match serde_json::from_slice::<Unique>(raw) {
         Ok(Unique(v)) if v.is_object() => Ok(v),
-        Err(_e)
-            if raw.windows(8).any(|s| s == b"nickname")
-                && crate::domain::matches(
-                    r"\\u[dD][89aAbBcCdDeEfF][0-9a-fA-F]{2}",
-                    &String::from_utf8_lossy(raw),
-                ) =>
-        {
+        Err(_e) if raw.windows(8).any(|s| s == b"nickname") && has_surrogate_escape(raw) => {
             Err(ApiError::new(422, "invalid_nickname", "昵称包含无效字符"))
         }
         _ => Err(ApiError::new(
@@ -138,22 +139,29 @@ struct Request {
     body: Value,
 }
 fn read_request(stream: &mut impl Read) -> Result<Request> {
-    let mut header = Vec::new();
-    let mut byte = [0u8; 1];
+    let mut buffer = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 2048];
+    let header_end;
     loop {
-        let n = stream.read(&mut byte).map_err(io_error)?;
+        let n = stream.read(&mut chunk).map_err(io_error)?;
         if n == 0 {
             return Err(ApiError::new(400, "http_error", "HTTP请求无效"));
         }
-        header.push(byte[0]);
-        if header.ends_with(b"\r\n\r\n") {
+        let prev_len = buffer.len();
+        buffer.extend_from_slice(&chunk[..n]);
+        let search_start = prev_len.saturating_sub(3);
+        if let Some(rel) = buffer[search_start..].windows(4).position(|w| w == b"\r\n\r\n") {
+            header_end = search_start + rel + 4;
+            if header_end > 16384 {
+                return Err(ApiError::new(431, "http_error", "HTTP头部过大"));
+            }
             break;
         }
-        if header.len() > 16384 {
+        if buffer.len() > 16384 {
             return Err(ApiError::new(431, "http_error", "HTTP头部过大"));
         }
     }
-    let text = std::str::from_utf8(&header)
+    let text = std::str::from_utf8(&buffer[..header_end])
         .map_err(|_| ApiError::new(400, "http_error", "HTTP请求无效"))?;
     let mut lines = text.split("\r\n");
     let line = lines.next().unwrap();
@@ -242,8 +250,13 @@ fn read_request(stream: &mut impl Read) -> Result<Request> {
                 "请使用application/json",
             ));
         }
+        let buffered_body = &buffer[header_end..];
         let mut raw = vec![0u8; length];
-        stream.read_exact(&mut raw).map_err(io_error)?;
+        let take = buffered_body.len().min(length);
+        raw[..take].copy_from_slice(&buffered_body[..take]);
+        if take < length {
+            stream.read_exact(&mut raw[take..]).map_err(io_error)?;
+        }
         parse_json(&raw)?
     } else {
         json!({})
@@ -405,8 +418,17 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
     println!("Stairclimb Rust listening on {}:{}; timezone=Asia/Shanghai; database=PostgreSQL; migration=4; transport={}",host,listener.local_addr()?.port(), if tls.is_some() { "HTTPS" } else { "internal-HTTP" });
     std::io::stdout().flush()?;
     let active = Arc::new(AtomicUsize::new(0));
+    struct ActiveGuard(Arc<AtomicUsize>);
+    impl Drop for ActiveGuard {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
     for socket in listener.incoming() {
-        let mut stream = socket?;
+        let mut stream = match socket {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
         if active.fetch_add(1, Ordering::SeqCst) >= 64 {
             active.fetch_sub(1, Ordering::SeqCst);
             if tls.is_some() {
@@ -422,11 +444,11 @@ pub fn run(test_mode: bool) -> std::result::Result<(), Box<dyn std::error::Error
             continue;
         }
         let app = app.clone();
-        let active = active.clone();
+        let guard = ActiveGuard(active.clone());
         let tls = tls.clone();
         std::thread::spawn(move || {
+            let _guard = guard;
             serve(stream, app, tls);
-            active.fetch_sub(1, Ordering::SeqCst);
         });
     }
     Ok(())
