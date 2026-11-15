@@ -1,0 +1,71 @@
+ios_local handoff after round 28 backend acceptance
+No application/test changes; no equivalent discovery or unavailable Apple-tool retry.
+$ git rev-parse HEAD
+a036c24f9b514523b8289b991771fcfd09157fb5
+exit_status=0
+$ git diff --exit-code cde6175e15d33fbf7e4edc1c13d516311b57f351 HEAD -- ios scripts README.md REQUIREMENTS.md backend/src/domain.rs backend/domain.py
+
+exit_status=0
+$ sha256sum -c docs/validation/ios-local-revalidation-sources.sha256
+ios/Config/Base.xcconfig: 成功
+ios/Config/Debug.xcconfig: 成功
+ios/Config/Release.xcconfig: 成功
+ios/Config/Service.example.xcconfig: 成功
+ios/StairClimb/App/LocalAppModel.swift: 成功
+ios/StairClimb/App/StairClimbApp.swift: 成功
+ios/StairClimb/Assets.xcassets/AppIcon.appiconset/AppIcon.png: 成功
+ios/StairClimb/Assets.xcassets/AppIcon.appiconset/Contents.json: 成功
+ios/StairClimb/Assets.xcassets/Contents.json: 成功
+ios/StairClimb/Core/CircleChannel.swift: 成功
+ios/StairClimb/Core/NicknameRules.swift: 成功
+ios/StairClimb/Core/ShanghaiDay.swift: 成功
+ios/StairClimb/Core/StepRules.swift: 成功
+ios/StairClimb/Health/HealthStepReader.swift: 成功
+ios/StairClimb/Identity/IdentityVault.swift: 成功
+ios/StairClimb/Identity/KeychainStore.swift: 成功
+ios/StairClimb/Info-Debug.plist: 成功
+ios/StairClimb/Info-Release.plist: 成功
+ios/StairClimb/Network/APIClient.swift: 成功
+ios/StairClimb/Network/EmailAuth.swift: 成功
+ios/StairClimb/Network/NetworkVault.swift: 成功
+ios/StairClimb/Network/ServiceAddress.swift: 成功
+ios/StairClimb/Network/SocialModel.swift: 成功
+ios/StairClimb/StairClimb.entitlements: 成功
+ios/StairClimb/Views/CircleView.swift: 成功
+ios/StairClimb/Views/EmailAccountView.swift: 成功
+ios/StairClimb/Views/ProgressViewScreen.swift: 成功
+ios/StairClimb/Views/SocialView.swift: 成功
+ios/StairClimb.xcodeproj/project.pbxproj: 成功
+ios/StairClimb.xcodeproj/xcshareddata/xcschemes/StairClimb.xcscheme: 成功
+ios/StairClimbTests/CircleTests.swift: 成功
+ios/StairClimbTests/EmailAuthTests.swift: 成功
+ios/StairClimbTests/IdentityVaultTests.swift: 成功
+ios/StairClimbTests/LocalAppModelTests.swift: 成功
+ios/StairClimbTests/NetworkTests.swift: 成功
+ios/StairClimbTests/ShanghaiDayTests.swift: 成功
+ios/StairClimbTests/StepRulesTests.swift: 成功
+scripts/check_ios_project.py: 成功
+scripts/tests/test_ios_project.py: 成功
+backend/domain.py: 成功
+backend/src/domain.rs: 成功
+README.md: 成功
+exit_status=0
+manifest_entries=42; all matched
+manifest_sha256=28f8e4111321f40f67264758a5d658c3a086ec3458520d983abf65d2e8e02cee
+saved_evidence=docs/validation/ios-local-revalidation-focused.txt
+sha256=92dd8d975f476da4d651b3433e354f93d6e7043dc8e81cab48f31ad47e919bee
+saved_exit_status=0; unchanged inputs verified above; not rerun this turn
+saved_evidence=docs/validation/ios-local-revalidation-regression.txt
+sha256=93a624dc5df57050a764b2aad8a831ba8605419e47420d316d4efc61d005eae5
+saved_exit_status=0; unchanged inputs verified above; not rerun this turn
+XCTest_source=ios/StairClimbTests/StepRulesTests.swift; methods=4; execution=NOT_RUN
+XCTest_source=ios/StairClimbTests/ShanghaiDayTests.swift; methods=4; execution=NOT_RUN
+XCTest_source=ios/StairClimbTests/IdentityVaultTests.swift; methods=5; execution=NOT_RUN
+XCTest_source=ios/StairClimbTests/LocalAppModelTests.swift; methods=15; execution=NOT_RUN
+XCTest_local_methods=28; source inspection only
+$ git diff --check
+
+exit_status=0
+Limits: no Swift/XCTest, signing, system trust, HealthKit or iPhone visual execution; unchanged known Linux limitation.
+scope=ios_local; backend_identity accepted by supplied round 28 review; other pending modules remain in monitor ledger.
+verification_exit_status=0
