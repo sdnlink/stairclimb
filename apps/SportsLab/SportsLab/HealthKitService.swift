@@ -81,9 +81,9 @@ final class HealthKitService: ObservableObject {
 
         let (rhr, hr, vo2Value, workoutList) = try await (resting, latestHR, vo2, workouts)
 
-        let runs = workoutList.filter { $0.activityType == .running }
+        let runs = workoutList.filter { $0.workoutActivityType == .running }
         let latestRun = runs.first
-        let runDistanceKm = latestRun?.totalDistance?.doubleValue(for: .meterUnit(with: .kilo))
+        let runDistanceKm = latestRun?.totalDistance?.doubleValue(for: HKUnit.meterUnit(with: .kilo))
         let runPace: Double? = {
             guard let dist = runDistanceKm, dist > 0.1, let dur = latestRun?.duration, dur > 0 else { return nil }
             return dur / dist
@@ -98,9 +98,9 @@ final class HealthKitService: ObservableObject {
             vo2Max: vo2Value,
             recentRunPaceSecondsPerKm: runPace,
             recentRunDistanceKm: runDistanceKm,
-            golfWorkouts: workoutList.filter { $0.activityType == .golf }.map(Self.summarize),
-            tennisWorkouts: workoutList.filter { $0.activityType == .tennis }.map(Self.summarize),
-            climbingWorkouts: workoutList.filter { $0.activityType == .climbing }.map(Self.summarize),
+            golfWorkouts: workoutList.filter { $0.workoutActivityType == .golf }.map(Self.summarize),
+            tennisWorkouts: workoutList.filter { $0.workoutActivityType == .tennis }.map(Self.summarize),
+            climbingWorkouts: workoutList.filter { $0.workoutActivityType == .climbing }.map(Self.summarize),
             runningWorkouts: runs.map(Self.summarize)
         )
     }
@@ -109,12 +109,10 @@ final class HealthKitService: ObservableObject {
         let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)
         let avgHR = hrType.flatMap { workout.statistics(for: $0)?.averageQuantity()?.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
         let name: String
-        switch workout.activityType {
+        switch workout.workoutActivityType {
         case .golf: name = "高尔夫"
         case .tennis: name = "网球"
         case .climbing: name = "攀岩"
-        case .underwaterDiving: name = "自由潜/水下"
-        case .swimming: name = "泳池训练"
         case .running: name = "跑步"
         default: name = "综合训练"
         }
@@ -123,7 +121,7 @@ final class HealthKitService: ObservableObject {
             activityName: name,
             startDate: workout.startDate,
             durationSeconds: workout.duration,
-            distanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
+            distanceMeters: workout.totalDistance?.doubleValue(for: HKUnit.meter()),
             averageHeartRateBPM: avgHR
         )
     }
