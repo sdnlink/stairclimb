@@ -46,6 +46,7 @@ struct MarathonStrategyView: View {
                     bonkRiskCard
                     distanceAndStrategyBar
                     interactiveSplitRibbonCard
+                    splitTableCard
                     packingKitGrid
                     fuelingTimelineCard
                     healthRiegelStrip
@@ -302,6 +303,61 @@ struct MarathonStrategyView: View {
                 }
                 .padding(12)
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private var splitTableCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("全程分段配速总表")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("\(plan.splits.count) 段")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+
+            ForEach(Array(plan.splits.enumerated()), id: \.element.id) { idx, split in
+                let isSelected = idx == min(selectedSplitIndex, max(0, plan.splits.count - 1))
+                HStack(spacing: 8) {
+                    Text(split.segmentLabel)
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(isSelected ? .orange : .white)
+                        .frame(width: 72, alignment: .leading)
+                    Text("\(MarathonPacingEngine.formatPace(split.paceSecondsPerKm))/km")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.cyan)
+                    Spacer()
+                    if let hr = split.targetHRRange {
+                        Text("\(hr.lowerBound)-\(hr.upperBound) bpm")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.65))
+                    }
+                    Text(MarathonPacingEngine.formatDuration(split.cumulativeSeconds))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 58, alignment: .trailing)
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .background(
+                    isSelected ? Color.orange.opacity(0.14) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .onTapGesture {
+                    selectedSplitIndex = idx
+                }
             }
         }
         .padding(16)

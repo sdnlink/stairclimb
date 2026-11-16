@@ -24,6 +24,10 @@ struct TennisStatsView: View {
                     shotKindPillBar
                     courtRadarCard
                     telemetryGrid
+                    if !tracker.shots.isEmpty {
+                        zoneAnalyticsCard
+                        recentShotsCard
+                    }
                     healthTennisCard
                 }
                 .padding(.horizontal, 16)
@@ -179,6 +183,77 @@ struct TennisStatsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var zoneAnalyticsCard: some View {
+        let grouped = Dictionary(grouping: tracker.shots, by: \.zone)
+            .mapValues(\.count)
+            .sorted { $0.value > $1.value }
+        let total = max(1, tracker.shots.count)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("落点区域分布")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+
+            ForEach(grouped, id: \.key.rawValue) { zone, count in
+                let ratio = Double(count) / Double(total)
+                let barColor: Color = zone.isInBounds ? .green : .red
+                HStack(spacing: 10) {
+                    Text(zone.rawValue)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 78, alignment: .leading)
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(barColor.opacity(0.85))
+                            .frame(width: max(12, geo.size.width * ratio), height: 10)
+                    }
+                    .frame(height: 10)
+                    Text("\(count) (\(Int((ratio * 100).rounded()))%)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(barColor)
+                        .frame(width: 68, alignment: .trailing)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private var recentShotsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("最近击球序列")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+
+            ForEach(tracker.shots.prefix(6)) { shot in
+                HStack {
+                    Text(shot.kind.rawValue)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(shot.zone.isInBounds ? Color.green : Color.red, in: Capsule())
+                    Text(shot.zone.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.85))
+                    Spacer()
+                    Text(shot.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func seedDemoRally() {

@@ -37,8 +37,10 @@ struct GolfSwingView: View {
                     trajectoryRadarCard
                     if let latest = analyzer.records.first {
                         telemetryHudBar(for: latest)
+                        phaseTimingCard(for: latest)
                         coachingAndSummaryCard(for: latest)
                     }
+                    bagGappingCard
                     liveCaptureCard
                     simulatorDrawerCard
                     healthGolfCard
@@ -249,6 +251,96 @@ struct GolfSwingView: View {
                         .stroke(Color.cyan.opacity(0.24), lineWidth: 1)
                 )
         )
+    }
+
+    private func phaseTimingCard(for record: GolfSwingRecord) -> some View {
+        let total = max(1, record.backswingMs + record.downswingMs)
+        let backRatio = Double(record.backswingMs) / Double(total)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("挥杆时序拆解")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("峰值角速度 \(Int(record.peakAngularVelocityDegPerSec.rounded())) deg/s")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.mint)
+            }
+
+            GeometryReader { geo in
+                HStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.cyan)
+                        .frame(width: max(20, geo.size.width * backRatio - 2))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.orange)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 10)
+
+            HStack {
+                Text("上杆 \(record.backswingMs) ms")
+                    .foregroundStyle(.cyan)
+                Spacer()
+                Text("下杆 \(record.downswingMs) ms")
+                    .foregroundStyle(.orange)
+            }
+            .font(.caption2.monospacedDigit().weight(.semibold))
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var bagGappingCard: some View {
+        let summaries: [(club: String, speed: Double, carryYds: Int, count: Int)] = clubs.compactMap { club in
+            guard let s = analyzer.clubSummary(for: club) else { return nil }
+            let carry = Int((s.avgSpeedMph * 2.15).rounded())
+            return (club: club, speed: s.avgSpeedMph, carryYds: carry, count: s.count)
+        }
+        return Group {
+            if !summaries.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("球包各杆杆速与估算落点", systemImage: "chart.bar.fill")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Text("Carry (yds)")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    ForEach(summaries, id: \.club) { item in
+                        HStack(spacing: 10) {
+                            Text(item.club)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, alignment: .leading)
+                            GeometryReader { geo in
+                                let width = max(16, geo.size.width * min(1.0, item.speed / 130.0))
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(LinearGradient(colors: [.cyan, .mint], startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: width, height: 10)
+                            }
+                            .frame(height: 10)
+                            Text("\(Int(item.speed.rounded()))mph · ~\(item.carryYds)y")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.cyan)
+                                .frame(width: 102, alignment: .trailing)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                )
+            }
+        }
     }
 
     private var liveCaptureCard: some View {
