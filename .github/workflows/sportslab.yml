@@ -35,10 +35,28 @@ jobs:
 
       - name: Run SportsLab XCTest on iOS Simulator
         run: |
+          SIM_UDID=$(python3 -c '
+          import json, re, subprocess
+          inv = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"], text=True))
+          cands = []
+          for rt, devs in inv.get("devices", {}).items():
+              m = re.fullmatch(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-(\d+)-(\d+)(?:-(\d+))?", rt)
+              if not m: continue
+              ver = tuple(int(x or 0) for x in m.groups())
+              if ver < (17, 0, 0): continue
+              for d in devs:
+                  if d.get("isAvailable") and str(d.get("deviceTypeIdentifier", "")).startswith("com.apple.CoreSimulator.SimDeviceType.iPhone-"):
+                      cands.append((ver, d["udid"], d["name"]))
+          if not cands:
+              raise SystemExit("No available iOS 17+ iPhone simulator found")
+          ver, udid, name = sorted(cands)[-1]
+          print(f"Using simulator: {name} ({udid})", file=__import__("sys").stderr)
+          print(udid)
+          ')
           xcodebuild test \
             -project apps/SportsLab/SportsLab.xcodeproj \
             -scheme SportsLab \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Archive & Export App Store IPA
