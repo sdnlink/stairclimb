@@ -43,6 +43,7 @@ struct MarathonStrategyView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     heroFinishCard
+                    bonkRiskCard
                     distanceAndStrategyBar
                     interactiveSplitRibbonCard
                     packingKitGrid
@@ -58,6 +59,14 @@ struct MarathonStrategyView: View {
         .navigationTitle("马拉松战术舱")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: shareSummaryText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(.cyan)
+                }
+            }
+        }
         .preferredColorScheme(.dark)
         .onAppear {
             if !hasAppliedHealthEstimate {
@@ -66,7 +75,7 @@ struct MarathonStrategyView: View {
                 hasAppliedHealthEstimate = true
             }
         }
-        .onChange(of: distance) { newDistance in
+        .onChange(of: distance) { _, newDistance in
             let sec = MarathonPacingEngine.estimateTargetSeconds(distance: newDistance, health: health.snapshot)
             targetMinutes = (sec / 60.0).rounded()
             selectedSplitIndex = 0
@@ -128,6 +137,64 @@ struct MarathonStrategyView: View {
                         .stroke(Color.orange.opacity(0.32), lineWidth: 1)
                 )
         )
+    }
+
+    private var bonkRiskAssessment: (level: String, color: Color, tip: String) {
+        var riskPoints = 0
+        if temperatureCelsius >= 26 { riskPoints += 2 } else if temperatureCelsius >= 22 { riskPoints += 1 }
+        if elevationGainMeters >= 400 { riskPoints += 2 } else if elevationGainMeters >= 200 { riskPoints += 1 }
+        if distance == .full {
+            let longestKm = (health.snapshot.runningWorkouts.compactMap(\.distanceMeters).max() ?? 0) / 1000.0
+            if longestKm > 0 && longestKm < 24 { riskPoints += 2 }
+        }
+        if riskPoints >= 4 {
+            return ("高撞墙风险", .red, "高温/爬升或长距离储备偏少，建议切换「稳健起步防掉速」并将前 10km 压慢 5-8s/km。")
+        } else if riskPoints >= 2 {
+            return ("中等风险", .yellow, "注意前程心率勿冲过 Z4，30km 后按时间轴补足咖啡因与电解质钠。")
+        } else {
+            return ("低风险 · 状态稳健", .mint, "赛道与体能匹配度良好，可按既定分段配速推进。")
+        }
+    }
+
+    private var bonkRiskCard: some View {
+        let risk = bonkRiskAssessment
+        return HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(risk.color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("后程撞墙评估：\(risk.level)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(risk.color)
+                Text(risk.tip)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(risk.color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(risk.color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+
+    private var shareSummaryText: String {
+        let splitLines = plan.splits.map {
+            "\($0.segmentLabel): \(MarathonPacingEngine.formatPace($0.paceSecondsPerKm))/km (累计 \(MarathonPacingEngine.formatDuration($0.cumulativeSeconds)))"
+        }.joined(separator: "\n")
+        return """
+        SportsLab 马拉松比赛日战术卡
+        项目：\(distance.rawValue) · \(strategy.rawValue)
+        目标完赛：\(MarathonPacingEngine.formatDuration(plan.targetTotalSeconds))（均速 \(MarathonPacingEngine.formatPace(plan.averagePaceSecondsPerKm))/km）
+        赛前清单：\(plan.totalGelsCount) 支能量胶 · \(plan.totalWaterMl) mL 补水 · \(plan.totalSodiumMg) mg 钠盐
+        分段配速：
+        \(splitLines)
+        """
     }
 
     private var distanceAndStrategyBar: some View {

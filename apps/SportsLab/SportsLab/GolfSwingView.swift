@@ -13,6 +13,7 @@ struct GolfSwingView: View {
     @State private var replayProgress = 1.0
     @State private var isReplaying = false
     @State private var showSimulatorTuner = false
+    @State private var ghostRecord: GolfSwingRecord?
 
     private let clubs = ["1号木", "3号木", "7号铁", "P杆"]
     private let replayTimer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
@@ -104,6 +105,21 @@ struct GolfSwingView: View {
                         .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer()
+                if analyzer.records.isEmpty {
+                    Button {
+                        analyzer.recordManual(club: "7号铁", backswingMs: 910, downswingMs: 300, peakAngularVelocityDegPerSec: 1220, planeDeviationDegrees: 1.5)
+                        analyzer.recordManual(club: "1号木", backswingMs: 980, downswingMs: 320, peakAngularVelocityDegPerSec: 1460, planeDeviationDegrees: 5.0)
+                        replayProgress = 0.0
+                        isReplaying = true
+                    } label: {
+                        Text("载入示例")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.14), in: Capsule())
+                    }
+                }
                 Button {
                     if isReplaying {
                         isReplaying = false
@@ -121,8 +137,29 @@ struct GolfSwingView: View {
                 }
             }
 
-            SwingTrajectoryCanvas(points: activePoints, progress: replayProgress)
-                .frame(height: 250)
+            SwingTrajectoryCanvas(
+                points: activePoints,
+                ghostPoints: ghostRecord?.points ?? [],
+                progress: replayProgress
+            )
+            .frame(height: 250)
+
+            if let ghost = ghostRecord {
+                HStack {
+                    Label("残影对比：\(ghost.club) · \(ghost.consistencyScore)分", systemImage: "square.on.square.dashed")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.purple)
+                    Spacer()
+                    Button("清除对比") {
+                        ghostRecord = nil
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.purple.opacity(0.14), in: Capsule())
+            }
 
             HStack(spacing: 10) {
                 Text("帧回放")
@@ -332,17 +369,18 @@ struct GolfSwingView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.7))
 
-            if health.golfWorkouts.isEmpty {
+            if health.snapshot.golfWorkouts.isEmpty {
                 Text("暂无高尔夫体能记录（可在首页点击同步体能数据）")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.5))
             } else {
-                ForEach(health.golfWorkouts) { item in
+                ForEach(health.snapshot.golfWorkouts) { item in
                     HStack {
                         Text(item.startDate.formatted(date: .abbreviated, time: .shortened))
                             .foregroundStyle(.white.opacity(0.8))
                         Spacer()
-                        Text("\(Int(item.durationMinutes)) 分钟 · \(Int(item.activeEnergyKcal)) kcal")
+                        let hrText = item.averageHeartRateBPM.map { " · \(Int($0.rounded())) bpm" } ?? ""
+                        Text("\(Int(item.durationSeconds / 60)) 分钟\(hrText)")
                             .foregroundStyle(.mint)
                     }
                     .font(.caption2)
@@ -357,11 +395,12 @@ struct GolfSwingView: View {
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !analyzer.records.isEmpty {
-                Text("历史挥杆档案")
+                Text("历史挥杆档案（点图钉可设为残影对比）")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white.opacity(0.9))
 
                 ForEach(analyzer.records) { record in
+                    let isGhost = ghostRecord?.id == record.id
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("\(record.club) · \(record.consistencyScore)分")
@@ -375,7 +414,16 @@ struct GolfSwingView: View {
                         Text("\(record.estimatedClubSpeedMph) mph")
                             .font(.subheadline.monospacedDigit().weight(.bold))
                             .foregroundStyle(.cyan)
+                        Button {
+                            ghostRecord = isGhost ? nil : record
+                        } label: {
+                            Image(systemName: isGhost ? "pin.fill" : "pin")
+                                .font(.caption)
+                                .foregroundStyle(isGhost ? .purple : .white.opacity(0.45))
+                                .padding(.leading, 8)
+                        }
                         Button(role: .destructive) {
+                            if isGhost { ghostRecord = nil }
                             analyzer.deleteRecord(record)
                         } label: {
                             Image(systemName: "trash")
@@ -458,6 +506,7 @@ private struct SliderRow: View {
 
 private struct SwingTrajectoryCanvas: View {
     let points: [SwingPoint]
+    var ghostPoints: [SwingPoint] = []
     let progress: Double
 
     private var referencePoints: [SwingPoint] {
@@ -489,6 +538,16 @@ private struct SwingTrajectoryCanvas: View {
                     color: .white.opacity(0.22),
                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
                 )
+
+                if !ghostPoints.isEmpty {
+                    drawPath(
+                        for: ghostPoints,
+                        in: size,
+                        context: &context,
+                        color: Color.purple.opacity(0.65),
+                        style: StrokeStyle(lineWidth: 2.5, dash: [4, 3])
+                    )
+                }
 
                 let sliced = Array(points.prefix(visibleCount))
                 let backswing = sliced.filter { $0.phase == "backswing" }
