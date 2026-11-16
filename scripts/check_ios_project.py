@@ -93,6 +93,82 @@ def xcconfig(path, seen=None):
     return result
 
 
+def _check_journey_catalog(path, steps_per_floor, maximum_steps):
+    """Validate bundled v1 editorial content, without claiming an App journey UI."""
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f'Duplicate JSON key: {key}')
+            result[key] = value
+        return result
+
+    def reject_constant(value):
+        raise ValueError(f'Non-standard JSON number: {value}')
+
+    try:
+        catalog = json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique_keys,
+                             parse_constant=reject_constant)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise CheckFailure(f'{path}: invalid UTF-8 JSON: {exc}') from exc
+
+    def fields(item, expected, location):
+        require(isinstance(item, dict), f'{path}: {location} must be an object')
+        missing = expected - item.keys()
+        extra = item.keys() - expected
+        require(not missing, f'{path}: {location} missing fields: {sorted(missing)}')
+        require(not extra, f'{path}: {location} unknown fields: {sorted(extra)}')
+
+    def identifier(item, seen, location):
+        value = item['id']
+        require(isinstance(value, str)
+                and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', value),
+                f'{path}: {location}.id must contain 1–64 ASCII letters, digits, dots, underscores '
+                'or hyphens, with a letter or digit first')
+        require(value not in seen, f'{path}: {location}: Duplicate id {value}')
+        seen.add(value)
+
+    def copy_fields(item, names, location):
+        for name in names:
+            require(isinstance(item[name], str) and item[name].strip(),
+                    f'{path}: {location}.{name} must be nonblank text')
+
+    fields(catalog, {'schemaVersion', 'routes'}, 'root')
+    require(type(catalog['schemaVersion']) is int and catalog['schemaVersion'] == 1,
+            f'{path}: schemaVersion must be integer 1')
+    routes = catalog['routes']
+    require(isinstance(routes, list) and len(routes) >= 2,
+            f'{path}: routes must be an array with at least two routes')
+    route_ids = set()
+    for index, route in enumerate(routes):
+        location = f'routes[{index}]'
+        if isinstance(route, dict):
+            location += f' ({route.get("id")!r})'
+        fields(route, {'id', 'title', 'summary', 'completionText', 'nodes'}, location)
+        identifier(route, route_ids, location)
+        copy_fields(route, ['title', 'summary', 'completionText'], location)
+        nodes = route['nodes']
+        require(isinstance(nodes, list) and len(nodes) >= 3,
+                f'{path}: {location}.nodes must be an array with at least three nodes')
+        previous = 0
+        node_ids = set()
+        for node_index, node in enumerate(nodes):
+            node_location = f'{location}.nodes[{node_index}]'
+            if isinstance(node, dict):
+                node_location += f' ({node.get("id")!r})'
+            fields(node, {'id', 'title', 'story', 'requiredSteps', 'completionText'}, node_location)
+            identifier(node, node_ids, node_location)
+            copy_fields(node, ['title', 'story', 'completionText'], node_location)
+            steps = node['requiredSteps']
+            require(type(steps) is int and steps_per_floor <= steps <= maximum_steps
+                    and steps % steps_per_floor == 0,
+                    f'{path}: {node_location}.requiredSteps must be an integer multiple of '
+                    f'{steps_per_floor} in [{steps_per_floor}, {maximum_steps}]')
+            require(steps > previous,
+                    f'{path}: {node_location}.requiredSteps must be strictly increasing within route')
+            previous = steps
+
+
 def check_project(root):
     root = Path(root).resolve()
     ios = root / 'ios'
@@ -286,6 +362,16 @@ def check_project(root):
     resource_ids = phase_files(app, 'PBXResourcesBuildPhase')
     assets = ios/'StairClimb/Assets.xcassets'
     require(assets in [resolved.get(r) for r in resource_ids], 'Assets not in resources phase')
+    journeys = ios/'StairClimb/Resources/ClimbJourneys.json'
+    require(journeys.is_file(), f'Missing journey catalog: {journeys}')
+    # Follow the actual application target -> resources phase -> build file ->
+    # resolved file reference. Orphan/test-target links and same-name decoys fail.
+    require(sum(resolved.get(r) == journeys for r in resource_ids) == 1,
+            f'{journeys}: expected one binding in StairClimb PBXResourcesBuildPhase')
+    resource_phase = next(obj(p) for p in app['buildPhases']
+                          if obj(p)['isa'] == 'PBXResourcesBuildPhase')
+    require(resource_phase.get('runOnlyForDeploymentPostprocessing', '0') == '0',
+            f'{journeys}: StairClimb PBXResourcesBuildPhase must run in normal builds')
     catalog = json.loads((assets/'AppIcon.appiconset/Contents.json').read_text())
     require(len(catalog['images']) > 0, 'Missing app icon')
     for item in catalog['images']:
@@ -302,6 +388,8 @@ def check_project(root):
         require(rust_value and int(rust_value[1].replace('_', '')) == constants[server], f'Rust/reference mismatch: {server}')
         match = re.search(rf'static let {client} = ([0-9_]+)', swift)
         require(match and int(match[1].replace('_', '')) == constants[server], f'Client/server mismatch: {server}')
+    # These bounds have just been checked against the actual Swift StepRules.
+    _check_journey_catalog(journeys, constants['STEPS_PER_FLOOR'], constants['MAX_STEPS'])
     require('Asia/Shanghai' in (ios/'StairClimb/Core/ShanghaiDay.swift').read_text(), 'Missing shared day timezone')
     require('chrono_tz::Asia::Shanghai' in rust, 'Missing Rust Shanghai timezone')
     return [f'PASS project reference graph: {len(objects)} objects; {len(app_sources)} app + {len(test_sources)} XCTest sources',
