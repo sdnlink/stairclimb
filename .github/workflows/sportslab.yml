@@ -1,0 +1,113 @@
+name: Build SportsLab iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: 'Build & test only, or archive signed App Store IPA'
+        type: choice
+        default: test-only
+        options:
+          - test-only
+          - app-store
+  push:
+    branches: [main]
+    paths:
+      - 'apps/SportsLab/**'
+      - '.github/workflows/sportslab.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sportslab-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 40
+    environment: APPLE_TEAM_ID
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run SportsLab XCTest on iOS Simulator
+        run: |
+          xcodebuild test \
+            -project apps/SportsLab/SportsLab.xcodeproj \
+            -scheme SportsLab \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Archive & Export App Store IPA
+        if: inputs.signing == 'app-store'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DIST_CERTIFICATE_P12: ${{ secrets.DIST_CERTIFICATE_P12 }}
+          DIST_P12_PASSWORD: ${{ secrets.DIST_P12_PASSWORD || secrets.P12_PASSWORD }}
+          SPORTSLAB_DIST_PROVISION_PROFILE: ${{ secrets.SPORTSLAB_DIST_PROVISION_PROFILE }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/sportslab-build.keychain-db"
+          KEYCHAIN_PASS="sportslab-ci-temp"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          P12_FILE="$RUNNER_TEMP/dist.p12"
+          echo "$DIST_CERTIFICATE_P12" | base64 --decode > "$P12_FILE"
+          security import "$P12_FILE" -k "$KEYCHAIN_PATH" -P "$DIST_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          PROFILE_FILE="$RUNNER_TEMP/sportslab.mobileprovision"
+          echo "$SPORTSLAB_DIST_PROVISION_PROFILE" | base64 --decode > "$PROFILE_FILE"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin <<< "$(security cms -D -i "$PROFILE_FILE")")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin <<< "$(security cms -D -i "$PROFILE_FILE")")
+          cp "$PROFILE_FILE" "$PROFILE_DIR/$PROFILE_UUID.mobileprovision"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>cn.stairclimb.sportslab</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild archive \
+            -project apps/SportsLab/SportsLab.xcodeproj \
+            -scheme SportsLab \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/SportsLab.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/SportsLab.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath .runtime/sportslab-ipa
+
+      - name: Upload SportsLab IPA
+        if: inputs.signing == 'app-store'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SportsLab-app-store-${{ github.run_id }}
+          path: .runtime/sportslab-ipa/*.ipa
+          retention-days: 7
