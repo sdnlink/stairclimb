@@ -69,6 +69,12 @@ final class TennisShotTracker: ObservableObject {
         save()
     }
 
+    func undoLastShot() {
+        guard !shots.isEmpty else { return }
+        shots.removeFirst()
+        save()
+    }
+
     var summary: TennisStatsSummary { Self.summarize(shots) }
 
     static func summarize(_ shots: [TennisShotRecord]) -> TennisStatsSummary {

@@ -13,6 +13,8 @@ struct MarathonStrategyView: View {
     @State private var hasAppliedHealthEstimate = false
     @State private var selectedSplitIndex: Int = 0
     @State private var showCourseTuner = false
+    @State private var simulatedKm: Double = 21.0
+    @State private var checkedGear: Set<String> = ["能量胶与盐丸", "号码布与计时芯片"]
 
     private var plan: MarathonPlan {
         MarathonPacingEngine.buildPlan(
@@ -45,10 +47,13 @@ struct MarathonStrategyView: View {
                     heroFinishCard
                     bonkRiskCard
                     distanceAndStrategyBar
+                    raceSimulatorCard
                     interactiveSplitRibbonCard
                     splitTableCard
+                    hrZonesSpectrumCard
                     packingKitGrid
                     fuelingTimelineCard
+                    preRaceChecklistCard
                     healthRiegelStrip
                     courseTunerDrawer
                 }
@@ -80,6 +85,7 @@ struct MarathonStrategyView: View {
             let sec = MarathonPacingEngine.estimateTargetSeconds(distance: newDistance, health: health.snapshot)
             targetMinutes = (sec / 60.0).rounded()
             selectedSplitIndex = 0
+            simulatedKm = min(simulatedKm, newDistance.kilometers)
         }
     }
 
@@ -377,6 +383,171 @@ struct MarathonStrategyView: View {
             PackingTile(title: "预计补水", value: "\(plan.totalWaterMl)", unit: "mL", accent: .cyan, icon: "drop.fill")
             PackingTile(title: "电解质钠", value: "\(plan.totalSodiumMg)", unit: "mg", accent: .purple, icon: "bolt.fill")
         }
+    }
+
+    private var raceSimulatorCard: some View {
+        let clampedKm = min(distance.kilometers, max(1.0, simulatedKm))
+        let elapsedSec = (clampedKm / distance.kilometers) * plan.targetTotalSeconds
+        let activeSplit = plan.splits.first(where: { $0.distanceKm >= clampedKm }) ?? plan.splits.last
+        let passedCues = plan.fuelingCues.filter { $0.distanceKm <= clampedKm }
+        let nextCue = plan.fuelingCues.first(where: { $0.distanceKm > clampedKm })
+        let carbsTaken = passedCues.map(\.carbsGrams).reduce(0, +)
+        let waterTaken = passedCues.map(\.waterMl).reduce(0, +)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("赛道进程实时推演", systemImage: "figure.run.circle.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(String(format: "%.1f / %.1f km", clampedKm, distance.kilometers))
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.orange)
+            }
+
+            Slider(value: $simulatedKm, in: 1.0...distance.kilometers, step: 0.5)
+                .tint(.orange)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("经过用时")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(MarathonPacingEngine.formatDuration(elapsedSec))
+                        .font(.subheadline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("当前配速")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text("\(MarathonPacingEngine.formatPace(activeSplit?.paceSecondsPerKm ?? plan.averagePaceSecondsPerKm))/km")
+                        .font(.subheadline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.cyan)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("已摄入碳水/水")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text("\(carbsTaken)g · \(waterTaken)mL")
+                        .font(.subheadline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.mint)
+                }
+            }
+
+            if let next = nextCue {
+                Text("下一补给站：\(String(format: "%.1f", next.distanceKm)) km（第 \(next.minuteMark) 分钟 · \(next.action)）")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("已完成全部赛道补给节点，保持核心稳定冲线！")
+                    .font(.caption2)
+                    .foregroundStyle(.mint)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.orange.opacity(0.26), lineWidth: 1)
+                )
+        )
+    }
+
+    private var hrZonesSpectrumCard: some View {
+        let rhr = health.snapshot.restingHeartRateBPM ?? 56.0
+        let zones: [(name: String, low: Double, high: Double, color: Color)] = [
+            ("Z1 热身恢复", 0.55, 0.65, .blue),
+            ("Z2 有氧耐力底", 0.65, 0.75, .mint),
+            ("Z3 马拉松巡航", 0.75, 0.83, .cyan),
+            ("Z4 乳酸阈维持", 0.83, 0.90, .orange),
+            ("Z5 无氧极限", 0.90, 0.98, .red)
+        ]
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Karvonen 储备心率五区光谱", systemImage: "heart.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.pink)
+                Spacer()
+                Text("静息 \(Int(rhr.rounded())) bpm · \(runnerAge)岁")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            ForEach(zones, id: \.name) { z in
+                let range = MarathonPacingEngine.karvonenHeartRateRange(
+                    restingHR: rhr,
+                    age: runnerAge,
+                    intensityLow: z.low,
+                    intensityHigh: z.high
+                )
+                HStack(spacing: 8) {
+                    Circle().fill(z.color).frame(width: 8, height: 8)
+                    Text(z.name)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 86, alignment: .leading)
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(z.color.opacity(0.75))
+                            .frame(width: geo.size.width * CGFloat(z.high), height: 8)
+                    }
+                    .frame(height: 8)
+                    Text(range.map { "\($0.lowerBound)–\($0.upperBound) bpm" } ?? "--")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(z.color)
+                        .frame(width: 82, alignment: .trailing)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var preRaceChecklistCard: some View {
+        let items = [
+            "能量胶与盐丸（按清单装入腰包）",
+            "号码布与计时芯片固定",
+            "运动手表/心率带充满电",
+            "重点部位防磨凡士林涂抹",
+            "起跑前 45 分钟慢饮 250mL 电解质水"
+        ]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("赛前装备与补给核对单", systemImage: "checklist")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("\(checkedGear.count)/\(items.count) 已就绪")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.mint)
+            }
+
+            ForEach(items, id: \.self) { item in
+                let checked = checkedGear.contains(item)
+                Button {
+                    if checked { checkedGear.remove(item) } else { checkedGear.insert(item) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: checked ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(checked ? .mint : .white.opacity(0.4))
+                        Text(item)
+                            .font(.caption)
+                            .foregroundStyle(checked ? .white : .white.opacity(0.7))
+                            .strikethrough(checked, color: .mint)
+                        Spacer()
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var fuelingTimelineCard: some View {

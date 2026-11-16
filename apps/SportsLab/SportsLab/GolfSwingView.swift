@@ -14,6 +14,9 @@ struct GolfSwingView: View {
     @State private var isReplaying = false
     @State private var showSimulatorTuner = false
     @State private var ghostRecord: GolfSwingRecord?
+    @State private var isMetronomeActive = false
+    @State private var metronomeBeat = 0
+    @State private var metronomeTick = 0
 
     private let clubs = ["1号木", "3号木", "7号铁", "P杆"]
     private let replayTimer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
@@ -40,6 +43,8 @@ struct GolfSwingView: View {
                         phaseTimingCard(for: latest)
                         coachingAndSummaryCard(for: latest)
                     }
+                    fairwayDispersionCard
+                    tempoMetronomeCard
                     bagGappingCard
                     liveCaptureCard
                     simulatorDrawerCard
@@ -56,6 +61,12 @@ struct GolfSwingView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .preferredColorScheme(.dark)
         .onReceive(replayTimer) { _ in
+            if isMetronomeActive {
+                metronomeTick += 1
+                if metronomeTick % 10 == 0 {
+                    metronomeBeat = (metronomeBeat + 1) % 4
+                }
+            }
             guard isReplaying else { return }
             if replayProgress >= 1.0 {
                 replayProgress = 0.0
@@ -187,13 +198,34 @@ struct GolfSwingView: View {
     }
 
     private func telemetryHudBar(for record: GolfSwingRecord) -> some View {
-        HStack(spacing: 10) {
+        let ballSpeed = (record.estimatedClubSpeedMph * 1.48 * 10).rounded() / 10
+        let carryYds = Int((record.estimatedClubSpeedMph * 2.15).rounded())
+        return LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+            spacing: 10
+        ) {
             HudGaugeCard(
                 title: "杆头速度",
                 value: String(format: "%.1f", record.estimatedClubSpeedMph),
                 unit: "mph",
                 accent: .cyan,
                 sublabel: record.club
+            )
+
+            HudGaugeCard(
+                title: "预估球速",
+                value: String(format: "%.1f", ballSpeed),
+                unit: "mph",
+                accent: .mint,
+                sublabel: "Smash 1.48"
+            )
+
+            HudGaugeCard(
+                title: "理论落点",
+                value: "\(carryYds)",
+                unit: "yds",
+                accent: .green,
+                sublabel: "Carry 飞行"
             )
 
             HudGaugeCard(
@@ -205,11 +237,19 @@ struct GolfSwingView: View {
             )
 
             HudGaugeCard(
+                title: "平面偏差",
+                value: String(format: "%+.1f", record.planeDeviationDegrees),
+                unit: "°",
+                accent: abs(record.planeDeviationDegrees) <= 4.0 ? .cyan : .orange,
+                sublabel: abs(record.planeDeviationDegrees) <= 4.0 ? "方正" : "侧旋倾向"
+            )
+
+            HudGaugeCard(
                 title: "一致性",
                 value: "\(record.consistencyScore)",
                 unit: "分",
                 accent: record.consistencyScore >= 85 ? .green : .orange,
-                sublabel: String(format: "偏差 %.1f°", record.planeDeviationDegrees)
+                sublabel: "综合评分"
             )
         }
     }
@@ -290,6 +330,92 @@ struct GolfSwingView: View {
         }
         .padding(14)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var fairwayDispersionCard: some View {
+        let clubRecords = analyzer.records.filter { $0.club == selectedClub }
+        let displayRecords = clubRecords.isEmpty ? Array(analyzer.records.prefix(6)) : Array(clubRecords.prefix(8))
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("球道弹道与落点散布雷达", systemImage: "scope")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("100 / 180 / 260 yds")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+
+            BallFlightFairwayCanvas(records: displayRecords)
+                .frame(height: 175)
+
+            HStack(spacing: 14) {
+                Label("直球 (On-Plane)", systemImage: "circle.fill").foregroundStyle(.mint)
+                Label("左曲/右曲偏移", systemImage: "circle.fill").foregroundStyle(.orange)
+                Spacer()
+                Text("根据杆速与平面角度推算弹道弧线")
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .font(.caption2)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.mint.opacity(0.24), lineWidth: 1)
+                )
+        )
+    }
+
+    private var tempoMetronomeCard: some View {
+        let beatLabels = ["1 起杆启动", "2 上杆半程", "3 顶点停顿", "4 下杆击球!"]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("3:1 巡回赛节奏节拍器", systemImage: "metronome.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Button {
+                    isMetronomeActive.toggle()
+                    metronomeBeat = 0
+                    metronomeTick = 0
+                } label: {
+                    Text(isMetronomeActive ? "停止节拍" : "开启节拍引导")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(isMetronomeActive ? .white : .black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(isMetronomeActive ? Color.red : Color.mint, in: Capsule())
+                }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(0..<4, id: \.self) { idx in
+                    let active = isMetronomeActive && metronomeBeat == idx
+                    let accent: Color = idx == 3 ? .orange : .cyan
+                    VStack(spacing: 4) {
+                        Circle()
+                            .fill(active ? accent : Color.white.opacity(0.12))
+                            .frame(width: 14, height: 14)
+                            .shadow(color: active ? accent : .clear, radius: 6)
+                        Text(beatLabels[idx])
+                            .font(.caption2.weight(active ? .bold : .regular))
+                            .foregroundStyle(active ? accent : .white.opacity(0.6))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(active ? accent.opacity(0.16) : Color.white.opacity(0.04))
+                    )
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var bagGappingCard: some View {
@@ -742,5 +868,49 @@ private struct SwingTrajectoryCanvas: View {
             }
         }
         context.stroke(path, with: .color(color), style: style)
+    }
+}
+
+private struct BallFlightFairwayCanvas: View {
+    let records: [GolfSwingRecord]
+
+    var body: some View {
+        Canvas { context, size in
+            let tee = CGPoint(x: size.width * 0.5, y: size.height - 14)
+
+            // Range arcs (100, 180, 260 yds)
+            for frac in [0.32, 0.58, 0.85] {
+                let r = size.height * frac
+                let rect = CGRect(x: tee.x - r, y: tee.y - r, width: r * 2, height: r * 2)
+                context.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.08)), lineWidth: 1)
+            }
+
+            // Center fairway target line
+            var centerLine = Path()
+            centerLine.move(to: tee)
+            centerLine.addLine(to: CGPoint(x: tee.x, y: 10))
+            context.stroke(centerLine, with: .color(.white.opacity(0.18)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+            for (idx, rec) in records.enumerated() {
+                let carryNorm = min(0.88, max(0.28, (rec.estimatedClubSpeedMph * 2.15) / 290.0))
+                let endY = tee.y - CGFloat(carryNorm) * (size.height - 24)
+                let curveOffset = CGFloat(max(-12.0, min(12.0, rec.planeDeviationDegrees)) / 12.0) * (size.width * 0.34)
+                let endX = tee.x + curveOffset
+                let ctrl = CGPoint(x: tee.x + curveOffset * 0.35, y: (tee.y + endY) * 0.5)
+
+                var shotPath = Path()
+                shotPath.move(to: tee)
+                shotPath.addQuadCurve(to: CGPoint(x: endX, y: endY), control: ctrl)
+
+                let isStraight = abs(rec.planeDeviationDegrees) <= 4.0
+                let color: Color = isStraight ? .mint : .orange
+                let alpha = idx == 0 ? 0.95 : 0.45
+                context.stroke(shotPath, with: .color(color.opacity(alpha)), style: StrokeStyle(lineWidth: idx == 0 ? 3.0 : 1.8, lineCap: .round))
+
+                let dot = CGRect(x: endX - 4, y: endY - 4, width: 8, height: 8)
+                context.fill(Path(ellipseIn: dot), with: .color(color.opacity(alpha)))
+            }
+        }
+        .background(Color(red: 0.04, green: 0.07, blue: 0.11), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

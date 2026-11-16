@@ -35,6 +35,7 @@ struct ClimbingCheckInView: View {
                     heroSummaryCard
                     if !store.entries.isEmpty {
                         gradeBreakdownCard
+                        gymStatsCard
                     }
                     checkInFormCard
                     healthClimbingCard
@@ -133,13 +134,22 @@ struct ClimbingCheckInView: View {
     private var gradeBreakdownCard: some View {
         let counts = Dictionary(grouping: store.entries, by: \.grade)
             .mapValues(\.count)
-            .sorted { $0.key < $1.key }
+            .sorted { $0.key > $1.key }
         let maxCount = max(1, counts.map(\.value).max() ?? 1)
+        let flashes = store.entries.filter { $0.outcome == .flash }.count
+        let redpoints = store.entries.filter { $0.outcome == .redpoint }.count
+        let attempts = store.entries.filter { $0.outcome == .attempt }.count
 
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("难度分布")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("难度金字塔与完攀结构", systemImage: "pyramid.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("Flash \(flashes) · 红点 \(redpoints) · 尝试 \(attempts)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.cyan)
+            }
 
             ForEach(counts, id: \.key) { item in
                 HStack(spacing: 10) {
@@ -148,16 +158,20 @@ struct ClimbingCheckInView: View {
                         .foregroundStyle(.purple)
                         .frame(width: 48, alignment: .leading)
                     GeometryReader { geo in
-                        let width = max(16, geo.size.width * CGFloat(item.value) / CGFloat(maxCount))
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: width, height: 12)
+                        let width = max(24, geo.size.width * CGFloat(item.value) / CGFloat(maxCount))
+                        HStack {
+                            Spacer(minLength: 0)
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: width, height: 12)
+                            Spacer(minLength: 0)
+                        }
                     }
                     .frame(height: 12)
-                    Text("\(item.value)")
+                    Text("\(item.value)条")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 24, alignment: .trailing)
+                        .frame(width: 34, alignment: .trailing)
                 }
             }
         }
@@ -170,6 +184,36 @@ struct ClimbingCheckInView: View {
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
         )
+    }
+
+    private var gymStatsCard: some View {
+        let grouped = Dictionary(grouping: store.entries, by: \.gymOrCrag)
+            .map { gym, items -> (gym: String, total: Int, sends: Int) in
+                (gym, items.count, items.filter { $0.outcome.isCompleted }.count)
+            }
+            .sorted { $0.total > $1.total }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Label("常去岩馆 / 岩场表现", systemImage: "mappin.and.ellipse")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+
+            ForEach(grouped, id: \.gym) { item in
+                let rate = Int((Double(item.sends) / Double(max(1, item.total)) * 100).rounded())
+                HStack {
+                    Text(item.gym)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("完攀 \(item.sends)/\(item.total) 条 · \(rate)%")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.mint)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var checkInFormCard: some View {

@@ -5,6 +5,7 @@ struct TennisStatsView: View {
     @ObservedObject var tracker: TennisShotTracker
     @ObservedObject var health: HealthKitService
     @State private var selectedKind: TennisShotKind = .forehand
+    @State private var showHeatmap = true
 
     var body: some View {
         ZStack {
@@ -25,6 +26,7 @@ struct TennisStatsView: View {
                     courtRadarCard
                     telemetryGrid
                     if !tracker.shots.isEmpty {
+                        shotKindAnalyticsCard
                         zoneAnalyticsCard
                         recentShotsCard
                     }
@@ -98,20 +100,42 @@ struct TennisStatsView: View {
                             .background(Color.green, in: Capsule())
                     }
                 } else {
-                    Button(role: .destructive) {
-                        tracker.clearAll()
-                    } label: {
-                        Text("清空")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.15), in: Capsule())
+                    HStack(spacing: 6) {
+                        Button {
+                            showHeatmap.toggle()
+                        } label: {
+                            Text(showHeatmap ? "热区:开" : "热区:关")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.cyan)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.cyan.opacity(0.15), in: Capsule())
+                        }
+                        Button {
+                            tracker.undoLastShot()
+                        } label: {
+                            Text("撤销")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.orange.opacity(0.15), in: Capsule())
+                        }
+                        Button(role: .destructive) {
+                            tracker.clearAll()
+                        } label: {
+                            Text("清空")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.red.opacity(0.15), in: Capsule())
+                        }
                     }
                 }
             }
 
-            TennisCourtCanvas(shots: tracker.shots) { x, y in
+            TennisCourtCanvas(shots: tracker.shots, showHeatmap: showHeatmap) { x, y in
                 tracker.addShot(kind: selectedKind, x: x, y: y)
             }
             .frame(height: 250)
@@ -183,6 +207,45 @@ struct TennisStatsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var shotKindAnalyticsCard: some View {
+        let kinds = TennisShotKind.allCases.compactMap { k -> (kind: TennisShotKind, count: Int, inRate: Double)? in
+            let sub = tracker.shots.filter { $0.kind == k }
+            guard !sub.isEmpty else { return nil }
+            let inCount = sub.filter { $0.zone.isInBounds }.count
+            return (k, sub.count, Double(inCount) / Double(sub.count))
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("各拍型表现拆解")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+
+            ForEach(kinds, id: \.kind.id) { item in
+                HStack(spacing: 10) {
+                    Text(item.kind.rawValue)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.cyan)
+                        .frame(width: 64, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.08))
+                            Capsule()
+                                .fill(LinearGradient(colors: [.cyan, .green], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(10, geo.size.width * item.inRate))
+                        }
+                    }
+                    .frame(height: 8)
+                    Text("\(item.count)拍 · \(Int((item.inRate * 100).rounded()))%界内")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 96, alignment: .trailing)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var zoneAnalyticsCard: some View {
@@ -309,6 +372,7 @@ private struct TennisMetricTile: View {
 
 private struct TennisCourtCanvas: View {
     let shots: [TennisShotRecord]
+    var showHeatmap: Bool = true
     let onTap: (Double, Double) -> Void
 
     var body: some View {
@@ -327,6 +391,18 @@ private struct TennisCourtCanvas: View {
                 serviceLine.move(to: CGPoint(x: size.width * 0.5, y: serviceY))
                 serviceLine.addLine(to: CGPoint(x: size.width * 0.5, y: courtRect.maxY))
                 context.stroke(serviceLine, with: .color(.white.opacity(0.45)), lineWidth: 1.5)
+
+                if showHeatmap {
+                    for shot in shots.prefix(120) {
+                        let pt = CGPoint(x: shot.x * size.width, y: shot.y * size.height)
+                        let heatColor: Color = shot.zone.isInBounds ? .green : .orange
+                        let radius: CGFloat = 24
+                        context.fill(
+                            Path(ellipseIn: CGRect(x: pt.x - radius, y: pt.y - radius, width: radius * 2, height: radius * 2)),
+                            with: .color(heatColor.opacity(0.10))
+                        )
+                    }
+                }
 
                 for (idx, shot) in shots.prefix(120).enumerated() {
                     let pt = CGPoint(x: shot.x * size.width, y: shot.y * size.height)

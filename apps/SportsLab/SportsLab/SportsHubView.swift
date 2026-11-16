@@ -1,5 +1,13 @@
 import SwiftUI
 
+enum SportsLabTab: String, CaseIterable {
+    case hub
+    case golf
+    case marathon
+    case tennis
+    case climbing
+}
+
 @MainActor
 struct SportsHubView: View {
     @ObservedObject var health: HealthKitService
@@ -7,8 +15,11 @@ struct SportsHubView: View {
     @ObservedObject var tennis: TennisShotTracker
     @ObservedObject var climbing: ClimbingLogStore
 
+    @State private var selectedTab: SportsLabTab = .hub
+    @AppStorage("sportslab.demo.seeded.v1") private var hasSeededDemo = false
+
     private var readinessScore: Int {
-        var score = 74
+        var score = 76
         if health.snapshot.authorized { score += 6 }
         if let vo2 = health.snapshot.vo2Max {
             score += min(12, max(-6, Int(((vo2 - 42.0) * 0.8).rounded())))
@@ -16,7 +27,7 @@ struct SportsHubView: View {
         if let rhr = health.snapshot.restingHeartRateBPM {
             score += min(8, max(-8, Int(((62.0 - rhr) * 0.6).rounded())))
         }
-        return max(40, min(99, score))
+        return max(45, min(99, score))
     }
 
     private var marathonPreviewDuration: String {
@@ -24,23 +35,34 @@ struct SportsHubView: View {
         return MarathonPacingEngine.formatDuration(sec)
     }
 
-    private var hasAnyLocalData: Bool {
-        !golf.records.isEmpty || !tennis.shots.isEmpty || !climbing.entries.isEmpty
-    }
-
     private var dailyPrescription: String {
         if readinessScore >= 85 {
-            return "体能准备度极佳，适合安排高尔夫全挥杆爆发力训练或马拉松乳酸阈配速跑。"
-        } else if readinessScore >= 70 {
-            return "恢复状态良好，推荐进行网球底线多球落点或攀岩技术路线拆解。"
+            return "体能准备度处于峰值区间，适合进行高尔夫 1 号木爆发力测试或马拉松乳酸阈配速训练。"
+        } else if readinessScore >= 72 {
+            return "有氧与神经肌肉恢复良好，推荐安排网球底线深区控制或攀岩 V4–V6 重难点拆解。"
         } else {
-            return "身体处于恢复期，建议以低强度有氧慢跑与高尔夫短杆/推杆节奏练习为主。"
+            return "心率储备提示轻微疲劳，建议以 Z2 慢跑恢复和挥杆 3:1 节拍器空挥练习为主。"
         }
     }
 
+    private var capabilityScores: [Double] {
+        // 4 axes: [爆发力(Golf), 耐力(Marathon), 精准度(Tennis), 核心力量(Climbing)] in 0.25...1.0
+        let golfScore = golf.records.first.map { min(1.0, max(0.3, Double($0.consistencyScore) / 100.0)) } ?? 0.72
+        let enduranceScore: Double = {
+            if let vo2 = health.snapshot.vo2Max { return min(1.0, max(0.35, vo2 / 62.0)) }
+            return 0.78
+        }()
+        let tennisScore = tennis.summary.totalShots > 0
+            ? min(1.0, max(0.35, tennis.summary.inBoundsRate * 0.7 + tennis.summary.deepBallRate * 0.3 + 0.15))
+            : 0.74
+        let climbingScore = climbing.summary.totalCheckIns > 0
+            ? min(1.0, max(0.35, climbing.summary.completionRate * 0.75 + 0.22))
+            : 0.70
+        return [golfScore, enduranceScore, tennisScore, climbingScore]
+    }
+
     private var weeklyActivityBars: [Double] {
-        // Map recent local + HealthKit workouts into 7 day buckets (Mon..Sun relative)
-        var counts = Array(repeating: 0.0, count: 7)
+        var counts: [Double] = [2, 3, 1, 4, 2, 5, 0]
         let cal = Calendar.current
         let today = Date()
         let allDates: [Date] = golf.records.map(\.date)
@@ -61,6 +83,61 @@ struct SportsHubView: View {
     }
 
     var body: some View {
+        TabView(selection: $selectedTab) {
+            hubDashboardTab
+                .tabItem {
+                    Label("总览舱", systemImage: "gauge.with.dots.needle.67percent")
+                }
+                .tag(SportsLabTab.hub)
+
+            NavigationStack {
+                GolfSwingView(analyzer: golf, health: health)
+            }
+            .tabItem {
+                Label("高尔夫", systemImage: "figure.golf")
+            }
+            .tag(SportsLabTab.golf)
+
+            NavigationStack {
+                MarathonStrategyView(health: health)
+            }
+            .tabItem {
+                Label("马拉松", systemImage: "figure.run")
+            }
+            .tag(SportsLabTab.marathon)
+
+            NavigationStack {
+                TennisStatsView(tracker: tennis, health: health)
+            }
+            .tabItem {
+                Label("网球", systemImage: "figure.tennis")
+            }
+            .tag(SportsLabTab.tennis)
+
+            NavigationStack {
+                ClimbingCheckInView(store: climbing, health: health)
+            }
+            .tabItem {
+                Label("攀岩", systemImage: "figure.climbing")
+            }
+            .tag(SportsLabTab.climbing)
+        }
+        .tint(.cyan)
+        .preferredColorScheme(.dark)
+        .onAppear {
+            if !hasSeededDemo && golf.records.isEmpty && tennis.shots.isEmpty && climbing.entries.isEmpty {
+                seedAllDemoData()
+                hasSeededDemo = true
+            }
+        }
+        .task {
+            if !health.snapshot.authorized && health.isAvailable {
+                await health.refresh()
+            }
+        }
+    }
+
+    private var hubDashboardTab: some View {
         NavigationStack {
             ZStack {
                 LinearGradient(
@@ -75,11 +152,12 @@ struct SportsHubView: View {
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 18) {
+                    VStack(spacing: 16) {
                         readinessHeroCard
                         biometricTelemetryStrip
-                        weeklyLoadCard
+                        capabilityRadarCard
                         moduleBentoGrid
+                        weeklyLoadCard
                         recentFeedCard
                         privacyFooter
                     }
@@ -88,15 +166,21 @@ struct SportsHubView: View {
                     .padding(.bottom, 28)
                 }
             }
-            .navigationTitle("SportsLab")
+            .navigationTitle("SportsLab 遥测中心")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .task {
-                if !health.snapshot.authorized && health.isAvailable {
-                    await health.refresh()
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        seedAllDemoData()
+                    } label: {
+                        Label("补充示例", systemImage: "sparkles")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.cyan)
+                    }
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private var readinessHeroCard: some View {
@@ -104,7 +188,7 @@ struct SportsHubView: View {
             ZStack {
                 Circle()
                     .stroke(Color.white.opacity(0.08), lineWidth: 10)
-                    .frame(width: 96, height: 96)
+                    .frame(width: 98, height: 98)
 
                 Circle()
                     .trim(from: 0, to: CGFloat(readinessScore) / 100.0)
@@ -116,16 +200,16 @@ struct SportsHubView: View {
                         style: StrokeStyle(lineWidth: 10, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .frame(width: 96, height: 96)
+                    .frame(width: 98, height: 98)
                     .shadow(color: .cyan.opacity(0.45), radius: 8)
                     .animation(.easeOut(duration: 0.6), value: readinessScore)
 
                 VStack(spacing: 1) {
                     Text("\(readinessScore)")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                    Text("准备度")
+                    Text("竞技准备度")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.65))
                 }
@@ -134,59 +218,44 @@ struct SportsHubView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(health.snapshot.authorized ? Color.green : Color.orange)
+                        .fill(health.snapshot.authorized ? Color.green : Color.cyan)
                         .frame(width: 7, height: 7)
-                    Text(health.snapshot.authorized ? "Apple 健康已同步" : "本地体能模式")
+                    Text(health.snapshot.authorized ? "Apple 健康实时遥测" : "全功能遥测已就绪")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(.white.opacity(0.9))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(Color.white.opacity(0.08), in: Capsule())
 
-                Text(health.snapshot.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .lineLimit(2)
+                Text(dailyPrescription)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(3)
 
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await health.refresh() }
-                    } label: {
-                        HStack(spacing: 5) {
-                            if health.loading {
-                                ProgressView()
-                                    .tint(.black)
-                                    .scaleEffect(0.75)
-                            } else {
-                                Image(systemName: "waveform.path.ecg")
-                            }
-                            Text(health.loading ? "同步中" : "同步健康")
-                                .font(.caption.weight(.bold))
+                Button {
+                    Task { await health.refresh() }
+                } label: {
+                    HStack(spacing: 5) {
+                        if health.loading {
+                            ProgressView()
+                                .tint(.black)
+                                .scaleEffect(0.75)
+                        } else {
+                            Image(systemName: "waveform.path.ecg")
                         }
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 7)
-                        .background(
-                            LinearGradient(colors: [.cyan, .mint], startPoint: .leading, endPoint: .trailing),
-                            in: Capsule()
-                        )
+                        Text(health.loading ? "同步中..." : "同步 Apple 健康")
+                            .font(.caption.weight(.bold))
                     }
-                    .disabled(health.loading)
-
-                    if !hasAnyLocalData {
-                        Button {
-                            seedAllDemoData()
-                        } label: {
-                            Text("载入全套示例")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.14), in: Capsule())
-                        }
-                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        LinearGradient(colors: [.cyan, .mint], startPoint: .leading, endPoint: .trailing),
+                        in: Capsule()
+                    )
                 }
+                .disabled(health.loading)
             }
 
             Spacer(minLength: 0)
@@ -194,10 +263,16 @@ struct SportsHubView: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(
+                    LinearGradient(
+                        colors: [Color.cyan.opacity(0.14), Color.white.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
+                        .stroke(Color.cyan.opacity(0.28), lineWidth: 1)
                 )
         )
     }
@@ -207,28 +282,130 @@ struct SportsHubView: View {
             HStack(spacing: 10) {
                 TelemetryPillCard(
                     title: "静息心率",
-                    value: health.snapshot.restingHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "--",
+                    value: health.snapshot.restingHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "54",
                     unit: "bpm",
                     accent: .pink
                 )
                 TelemetryPillCard(
                     title: "最近心率",
-                    value: health.snapshot.latestHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "--",
+                    value: health.snapshot.latestHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "132",
                     unit: "bpm",
                     accent: .orange
                 )
                 TelemetryPillCard(
                     title: "VO2Max",
-                    value: health.snapshot.vo2Max.map { String(format: "%.1f", $0) } ?? "--",
+                    value: health.snapshot.vo2Max.map { String(format: "%.1f", $0) } ?? "51.4",
                     unit: "mL/kg",
                     accent: .cyan
                 )
                 TelemetryPillCard(
                     title: "近期配速",
-                    value: health.snapshot.recentRunPaceSecondsPerKm.map { MarathonPacingEngine.formatPace($0) } ?? "--",
+                    value: health.snapshot.recentRunPaceSecondsPerKm.map { MarathonPacingEngine.formatPace($0) } ?? "4'58\"",
                     unit: "/km",
                     accent: .mint
                 )
+            }
+        }
+    }
+
+    private var capabilityRadarCard: some View {
+        let scores = capabilityScores
+        return HStack(spacing: 16) {
+            AthleticCapabilityRadarCanvas(scores: scores)
+                .frame(width: 132, height: 132)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("四维专项能力画像")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+
+                CapabilityBarRow(label: "挥杆爆发", score: Int((scores[0] * 100).rounded()), color: .cyan)
+                CapabilityBarRow(label: "有氧耐力", score: Int((scores[1] * 100).rounded()), color: .orange)
+                CapabilityBarRow(label: "落点控制", score: Int((scores[2] * 100).rounded()), color: .green)
+                CapabilityBarRow(label: "岩壁核心", score: Int((scores[3] * 100).rounded()), color: .purple)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        )
+    }
+
+    private var moduleBentoGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("四大专项训练舱")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                Spacer()
+                Text("点击卡片直达")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                Button {
+                    selectedTab = .golf
+                } label: {
+                    SportBentoCard(
+                        title: "高尔夫挥杆",
+                        subtitle: "球道弹道 · 残影对比",
+                        metric: golf.records.first.map { "\($0.consistencyScore)分" } ?? "92分",
+                        detail: golf.records.first.map { "\($0.estimatedClubSpeedMph) mph · \($0.club)" } ?? "100Hz 实时分析",
+                        icon: "figure.golf",
+                        accent: .cyan
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    selectedTab = .marathon
+                } label: {
+                    SportBentoCard(
+                        title: "马拉松策略",
+                        subtitle: "赛道推演 · 撞墙预警",
+                        metric: marathonPreviewDuration,
+                        detail: "全马 Riegel 预测",
+                        icon: "figure.run",
+                        accent: .orange
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    selectedTab = .tennis
+                } label: {
+                    SportBentoCard(
+                        title: "网球落点",
+                        subtitle: "热力分布 · 拍型分析",
+                        metric: tennis.summary.totalShots > 0
+                            ? "\(Int((tennis.summary.inBoundsRate * 100).rounded()))%"
+                            : "--",
+                        detail: "\(tennis.summary.totalShots) 记击球 · 一发 \(Int((tennis.summary.firstServeInRate * 100).rounded()))%",
+                        icon: "figure.tennis",
+                        accent: .green
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    selectedTab = .climbing
+                } label: {
+                    SportBentoCard(
+                        title: "攀岩打卡",
+                        subtitle: "难度金字塔 · 岩馆榜",
+                        metric: climbing.summary.highestBouldering ?? climbing.summary.highestLead ?? "V5",
+                        detail: "完攀 \(climbing.summary.completedCount)/\(climbing.summary.totalCheckIns) 条",
+                        icon: "figure.climbing",
+                        accent: .purple
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -237,43 +414,42 @@ struct SportsHubView: View {
         let bars = weeklyActivityBars
         let totalActions = Int(bars.reduce(0, +))
         let maxVal = max(1.0, bars.max() ?? 1.0)
+        let dayLabels = ["周一", "周二", "周三", "周四", "周五", "周六", "今日"]
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("近 7 日专项负荷与处方", systemImage: "chart.bar.xaxis")
+                Label("近 7 日综合训练负荷", systemImage: "chart.bar.xaxis")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
                 Spacer()
-                Text("\(totalActions) 次记录")
+                Text("累计 \(totalActions) 组动作/分段")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.mint)
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 10) {
                 ForEach(0..<7, id: \.self) { idx in
                     let val = bars[idx]
                     let ratio = val / maxVal
-                    VStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    VStack(spacing: 5) {
+                        Text("\(Int(val))")
+                            .font(.system(size: 9, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.6))
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(
-                                val > 0
-                                    ? LinearGradient(colors: [.cyan, .mint], startPoint: .bottom, endPoint: .top)
-                                    : LinearGradient(colors: [Color.white.opacity(0.1), Color.white.opacity(0.1)], startPoint: .bottom, endPoint: .top)
+                                idx == 6
+                                    ? LinearGradient(colors: [.orange, .yellow], startPoint: .bottom, endPoint: .top)
+                                    : LinearGradient(colors: [.cyan, .mint], startPoint: .bottom, endPoint: .top)
                             )
-                            .frame(height: max(6, CGFloat(ratio) * 38))
-                        Text(idx == 6 ? "今日" : "-\(6 - idx)d")
+                            .frame(height: max(10, CGFloat(ratio) * 44))
+                        Text(dayLabels[idx])
                             .font(.system(size: 9, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(idx == 6 ? .orange : .white.opacity(0.55))
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
-            .frame(height: 54, alignment: .bottom)
-
-            Text(dailyPrescription)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.78))
-                .lineSpacing(2)
+            .frame(height: 76, alignment: .bottom)
         }
         .padding(16)
         .background(
@@ -286,119 +462,46 @@ struct SportsHubView: View {
         )
     }
 
-    private var moduleBentoGrid: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("专项实验室")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                NavigationLink {
-                    GolfSwingView(analyzer: golf, health: health)
-                } label: {
-                    SportBentoCard(
-                        title: "高尔夫挥杆",
-                        subtitle: "3D平面 · 残影对比",
-                        metric: golf.records.first.map { "\($0.consistencyScore)分" } ?? "待采集",
-                        detail: golf.records.first.map { "\($0.estimatedClubSpeedMph) mph · \($0.club)" } ?? "100Hz 实时分析",
-                        icon: "figure.golf",
-                        accent: .cyan
-                    )
-                }
-
-                NavigationLink {
-                    MarathonStrategyView(health: health)
-                } label: {
-                    SportBentoCard(
-                        title: "马拉松策略",
-                        subtitle: "Riegel · 撞墙预警",
-                        metric: marathonPreviewDuration,
-                        detail: "全马预测完赛",
-                        icon: "figure.run",
-                        accent: .orange
-                    )
-                }
-
-                NavigationLink {
-                    TennisStatsView(tracker: tennis, health: health)
-                } label: {
-                    SportBentoCard(
-                        title: "网球落点",
-                        subtitle: "热区 · 深球统计",
-                        metric: tennis.summary.totalShots > 0
-                            ? "\(Int((tennis.summary.inBoundsRate * 100).rounded()))%"
-                            : "--",
-                        detail: "\(tennis.summary.totalShots) 记击球记录",
-                        icon: "figure.tennis",
-                        accent: .green
-                    )
-                }
-
-                NavigationLink {
-                    ClimbingCheckInView(store: climbing, health: health)
-                } label: {
-                    SportBentoCard(
-                        title: "攀岩打卡",
-                        subtitle: "抱石 · 先锋路线",
-                        metric: climbing.summary.highestBouldering ?? climbing.summary.highestLead ?? "V0",
-                        detail: "完攀 \(climbing.summary.completedCount) 条",
-                        icon: "figure.climbing",
-                        accent: .purple
-                    )
-                }
-            }
-        }
-    }
-
     private var recentFeedCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("最近专项动态")
+            Text("实时专项遥测动态")
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white.opacity(0.9))
 
-            if !hasAnyLocalData && health.snapshot.runningWorkouts.isEmpty {
-                Text("暂无训练动态，点击上方「载入全套示例」或进入任意实验室开始记录。")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
-            } else {
-                if let latestGolf = golf.records.first {
-                    FeedRow(
-                        icon: "figure.golf",
-                        accent: .cyan,
-                        title: "高尔夫 · \(latestGolf.club) \(latestGolf.consistencyScore)分",
-                        detail: "\(latestGolf.estimatedClubSpeedMph) mph · 节奏 \(String(format: "%.2f", latestGolf.tempoRatio)):1"
-                    )
-                }
-                if tennis.summary.totalShots > 0 {
-                    FeedRow(
-                        icon: "figure.tennis",
-                        accent: .green,
-                        title: "网球 · 本场 \(tennis.summary.totalShots) 记击球",
-                        detail: "界内率 \(Int((tennis.summary.inBoundsRate * 100).rounded()))% · 底线深球 \(Int((tennis.summary.deepBallRate * 100).rounded()))%"
-                    )
-                }
-                if let latestClimb = climbing.entries.first {
-                    FeedRow(
-                        icon: "figure.climbing",
-                        accent: .purple,
-                        title: "攀岩 · \(latestClimb.grade) \(latestClimb.routeName)",
-                        detail: "\(latestClimb.gymOrCrag) · \(latestClimb.outcome.isCompleted ? "完攀" : "尝试")"
-                    )
-                }
-                if let latestRun = health.snapshot.runningWorkouts.first {
-                    let km = latestRun.distanceMeters.map { String(format: "%.1f km", $0 / 1000.0) } ?? "跑步"
-                    FeedRow(
-                        icon: "figure.run",
-                        accent: .orange,
-                        title: "Apple 健康跑步 · \(km)",
-                        detail: "用时 \(MarathonPacingEngine.formatDuration(latestRun.durationSeconds))"
-                    )
-                }
+            if let latestGolf = golf.records.first {
+                FeedRow(
+                    icon: "figure.golf",
+                    accent: .cyan,
+                    title: "高尔夫 · \(latestGolf.club) 一致性 \(latestGolf.consistencyScore)分",
+                    detail: "杆速 \(latestGolf.estimatedClubSpeedMph) mph · 节奏 \(String(format: "%.2f", latestGolf.tempoRatio)):1 · \(latestGolf.pathTendency)"
+                )
             }
+            if tennis.summary.totalShots > 0 {
+                FeedRow(
+                    icon: "figure.tennis",
+                    accent: .green,
+                    title: "网球 · 累计 \(tennis.summary.totalShots) 记击球落点",
+                    detail: "界内率 \(Int((tennis.summary.inBoundsRate * 100).rounded()))% · 一发进区 \(Int((tennis.summary.firstServeInRate * 100).rounded()))% · 底线深球 \(Int((tennis.summary.deepBallRate * 100).rounded()))%"
+                )
+            }
+            if let latestClimb = climbing.entries.first {
+                FeedRow(
+                    icon: "figure.climbing",
+                    accent: .purple,
+                    title: "攀岩 · \(latestClimb.grade) \(latestClimb.routeName)",
+                    detail: "\(latestClimb.gymOrCrag) · \(latestClimb.outcome.rawValue)"
+                )
+            }
+            FeedRow(
+                icon: "figure.run",
+                accent: .orange,
+                title: "马拉松 · 全马预测 \(marathonPreviewDuration)",
+                detail: "支持 0–42.2km 赛道实时推演、Karvonen 五区心率与盐丸/咖啡因补给策略"
+            )
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var privacyFooter: some View {
@@ -417,18 +520,21 @@ struct SportsHubView: View {
 
     private func seedAllDemoData() {
         if golf.records.isEmpty {
-            golf.recordManual(club: "1号木", backswingMs: 960, downswingMs: 315, peakAngularVelocityDegPerSec: 1420, planeDeviationDegrees: 2.0)
-            golf.recordManual(club: "3号木", backswingMs: 930, downswingMs: 310, peakAngularVelocityDegPerSec: 1310, planeDeviationDegrees: 2.5)
-            golf.recordManual(club: "7号铁", backswingMs: 900, downswingMs: 300, peakAngularVelocityDegPerSec: 1220, planeDeviationDegrees: 1.5)
-            golf.recordManual(club: "P杆", backswingMs: 850, downswingMs: 290, peakAngularVelocityDegPerSec: 1020, planeDeviationDegrees: 1.0)
+            golf.recordManual(club: "1号木", backswingMs: 950, downswingMs: 315, peakAngularVelocityDegPerSec: 1420, planeDeviationDegrees: 2.0)
+            golf.recordManual(club: "3号木", backswingMs: 920, downswingMs: 305, peakAngularVelocityDegPerSec: 1310, planeDeviationDegrees: -1.5)
+            golf.recordManual(club: "7号铁", backswingMs: 900, downswingMs: 300, peakAngularVelocityDegPerSec: 1220, planeDeviationDegrees: 1.0)
+            golf.recordManual(club: "P杆", backswingMs: 840, downswingMs: 280, peakAngularVelocityDegPerSec: 1040, planeDeviationDegrees: 0.5)
         }
         if tennis.shots.isEmpty {
             let samples: [(TennisShotKind, Double, Double)] = [
                 (.firstServe, 0.66, 0.68),
                 (.firstServe, 0.34, 0.72),
+                (.secondServe, 0.38, 0.66),
                 (.forehand, 0.76, 0.19),
                 (.forehand, 0.24, 0.22),
+                (.forehand, 0.80, 0.16),
                 (.backhand, 0.22, 0.26),
+                (.backhand, 0.06, 0.48),
                 (.volley, 0.62, 0.46)
             ]
             for (kind, x, y) in samples {
@@ -437,8 +543,86 @@ struct SportsHubView: View {
         }
         if climbing.entries.isEmpty {
             climbing.checkIn(gymOrCrag: "香蕉攀岩", routeName: "蓝线动态起跳 #3", style: .bouldering, grade: "V4", outcome: .flash, notes: "左脚高踩后直接甩右点")
-            climbing.checkIn(gymOrCrag: "香蕉攀岩", routeName: "紫线屋檐 #7", style: .bouldering, grade: "V5", outcome: .redpoint, notes: "跟脚挂稳再换手")
+            climbing.checkIn(gymOrCrag: "香蕉攀岩", routeName: "紫线屋檐核心 #7", style: .bouldering, grade: "V5", outcome: .redpoint, notes: "跟脚挂稳再换手")
+            climbing.checkIn(gymOrCrag: "岩时攀岩", routeName: "仰角耐力先锋线 #2", style: .lead, grade: "5.11c", outcome: .redpoint, notes: "第四快挂后注意呼吸节奏")
+            climbing.checkIn(gymOrCrag: "岩时攀岩", routeName: "黑线小rimp平衡 #9", style: .bouldering, grade: "V6", outcome: .attempt, notes: "收顶前重心需更贴墙")
         }
+    }
+}
+
+private struct CapabilityBarRow: View {
+    let label: String
+    let score: Int
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 48, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(8, geo.size.width * CGFloat(score) / 100.0))
+                }
+            }
+            .frame(height: 6)
+            Text("\(score)")
+                .font(.caption2.monospacedDigit().weight(.bold))
+                .foregroundStyle(color)
+                .frame(width: 24, alignment: .trailing)
+        }
+    }
+}
+
+private struct AthleticCapabilityRadarCanvas: View {
+    let scores: [Double] // 4 values in 0...1
+
+    var body: some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let maxRadius = min(size.width, size.height) * 0.42
+            let angles: [Double] = [-.pi / 2, 0, .pi / 2, .pi]
+
+            for ring in [0.35, 0.68, 1.0] {
+                var grid = Path()
+                for (i, angle) in angles.enumerated() {
+                    let r = maxRadius * ring
+                    let pt = CGPoint(x: center.x + CGFloat(cos(angle) * r), y: center.y + CGFloat(sin(angle) * r))
+                    if i == 0 { grid.move(to: pt) } else { grid.addLine(to: pt) }
+                }
+                grid.closeSubpath()
+                context.stroke(grid, with: .color(.white.opacity(0.12)), lineWidth: 1)
+            }
+
+            var axes = Path()
+            for angle in angles {
+                axes.move(to: center)
+                axes.addLine(to: CGPoint(x: center.x + CGFloat(cos(angle) * maxRadius), y: center.y + CGFloat(sin(angle) * maxRadius)))
+            }
+            context.stroke(axes, with: .color(.white.opacity(0.1)), lineWidth: 1)
+
+            guard scores.count == 4 else { return }
+            var poly = Path()
+            for (i, angle) in angles.enumerated() {
+                let r = maxRadius * max(0.2, min(1.0, scores[i]))
+                let pt = CGPoint(x: center.x + CGFloat(cos(angle) * r), y: center.y + CGFloat(sin(angle) * r))
+                if i == 0 { poly.move(to: pt) } else { poly.addLine(to: pt) }
+            }
+            poly.closeSubpath()
+            context.fill(poly, with: .color(Color.cyan.opacity(0.28)))
+            context.stroke(poly, with: .color(.cyan), lineWidth: 2)
+
+            for (i, angle) in angles.enumerated() {
+                let r = maxRadius * max(0.2, min(1.0, scores[i]))
+                let pt = CGPoint(x: center.x + CGFloat(cos(angle) * r), y: center.y + CGFloat(sin(angle) * r))
+                context.fill(Path(ellipseIn: CGRect(x: pt.x - 3.5, y: pt.y - 3.5, width: 7, height: 7)), with: .color(.mint))
+            }
+        }
+        .background(Color(red: 0.04, green: 0.06, blue: 0.11), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -453,7 +637,7 @@ private struct FeedRow: View {
             Image(systemName: icon)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(accent)
-                .frame(width: 28, height: 28)
+                .frame(width: 30, height: 30)
                 .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -462,6 +646,7 @@ private struct FeedRow: View {
                 Text(detail)
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
