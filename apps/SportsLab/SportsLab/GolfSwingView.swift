@@ -677,14 +677,7 @@ private struct HudGaugeCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(accent.opacity(0.28), lineWidth: 1)
-                )
-        )
+        .glassLabCard(accent: accent, cornerRadius: 16)
     }
 }
 

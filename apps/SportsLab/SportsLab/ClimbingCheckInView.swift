@@ -59,6 +59,7 @@ struct ClimbingCheckInView: View {
         let rate = s.completionRate
         return HStack(spacing: 16) {
             ZStack {
+                DialTickRing(tickCount: 24, radius: 49, tickLength: 3.5)
                 Circle()
                     .stroke(Color.white.opacity(0.08), lineWidth: 9)
                     .frame(width: 86, height: 86)
@@ -107,18 +108,32 @@ struct ClimbingCheckInView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.purple.opacity(0.18), Color.white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.purple.opacity(0.20), Color.white.opacity(0.045)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.purple.opacity(0.32), lineWidth: 1)
-                )
+                Image(systemName: "figure.climbing")
+                    .font(.system(size: 64, weight: .bold))
+                    .foregroundStyle(Color.purple.opacity(0.08))
+                    .offset(x: -8, y: -4)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.purple.opacity(0.45), Color.white.opacity(0.12), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
         )
     }
 

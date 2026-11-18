@@ -350,14 +350,7 @@ private struct TennisMetricTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(accent.opacity(0.24), lineWidth: 1)
-                )
-        )
+        .glassLabCard(accent: accent, cornerRadius: 16)
     }
 }
 
@@ -369,19 +362,29 @@ private struct TennisCourtCanvas: View {
     var body: some View {
         GeometryReader { geo in
             Canvas { context, size in
-                let courtRect = CGRect(x: size.width * 0.1, y: size.height * 0.1, width: size.width * 0.8, height: size.height * 0.9)
-                let deepRect = CGRect(x: courtRect.minX, y: courtRect.minY, width: courtRect.width, height: size.height * 0.20)
-                context.fill(Path(courtRect), with: .color(Color.teal.opacity(0.16)))
-                context.fill(Path(deepRect), with: .color(Color.orange.opacity(0.10)))
-                context.stroke(Path(courtRect), with: .color(.white.opacity(0.75)), lineWidth: 2)
+                let courtRect = CGRect(x: size.width * 0.1, y: size.height * 0.1, width: size.width * 0.8, height: size.height * 0.86)
+                let singlesRect = CGRect(x: size.width * 0.18, y: courtRect.minY, width: size.width * 0.64, height: courtRect.height)
+                let deepRect = CGRect(x: singlesRect.minX, y: courtRect.minY, width: singlesRect.width, height: size.height * 0.18)
+
+                context.fill(Path(courtRect), with: .color(Color(red: 0.05, green: 0.22, blue: 0.20).opacity(0.65)))
+                context.fill(Path(deepRect), with: .color(Color.orange.opacity(0.11)))
+                context.stroke(Path(courtRect), with: .color(.white.opacity(0.8)), lineWidth: 2)
+                context.stroke(Path(singlesRect), with: .color(.white.opacity(0.55)), lineWidth: 1.5)
 
                 let serviceY = size.height * 0.55
                 var serviceLine = Path()
-                serviceLine.move(to: CGPoint(x: courtRect.minX, y: serviceY))
-                serviceLine.addLine(to: CGPoint(x: courtRect.maxX, y: serviceY))
+                serviceLine.move(to: CGPoint(x: singlesRect.minX, y: serviceY))
+                serviceLine.addLine(to: CGPoint(x: singlesRect.maxX, y: serviceY))
                 serviceLine.move(to: CGPoint(x: size.width * 0.5, y: serviceY))
                 serviceLine.addLine(to: CGPoint(x: size.width * 0.5, y: courtRect.maxY))
-                context.stroke(serviceLine, with: .color(.white.opacity(0.45)), lineWidth: 1.5)
+                // Center baseline mark
+                serviceLine.move(to: CGPoint(x: size.width * 0.5, y: courtRect.minY))
+                serviceLine.addLine(to: CGPoint(x: size.width * 0.5, y: courtRect.minY + 8))
+                context.stroke(serviceLine, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
+
+                // Net band at bottom
+                let netRect = CGRect(x: courtRect.minX - 6, y: courtRect.maxY - 2, width: courtRect.width + 12, height: 5)
+                context.fill(Path(netRect), with: .color(.white.opacity(0.65)))
 
                 if showHeatmap {
                     for shot in shots.prefix(120) {
