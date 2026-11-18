@@ -126,4 +126,24 @@ final class SportsLabTests: XCTestCase {
         XCTAssertGreaterThan(plan.totalSodiumMg, 1500)
         XCTAssertNotNil(plan.splits.first?.targetHRRange)
     }
+
+    func testMarathonLiveRaceStateAndFuelingCountdown() {
+        let health = HealthMetricsSnapshot(authorized: true, statusMessage: "ok", restingHeartRateBPM: 54, vo2Max: 52, recentRunPaceSecondsPerKm: 300)
+        let plan = MarathonPacingEngine.buildPlan(
+            distance: .full,
+            targetMinutes: 240,
+            strategy: .even,
+            bodyWeightKg: 68,
+            temperatureCelsius: 20,
+            health: health
+        )
+
+        // At 25 minutes (1500s), next cue should be minuteMark == 30 (countdown == 300s)
+        let early = MarathonPacingEngine.liveState(elapsedSeconds: 25 * 60, plan: plan)
+        XCTAssertEqual(early.nextFuelingCue?.minuteMark, 30)
+        XCTAssertEqual(early.secondsToNextCue ?? 0, 300, accuracy: 0.1)
+        XCTAssertGreaterThan(early.estimatedDistanceKm, 4.0)
+        XCTAssertLessThan(early.estimatedDistanceKm, 6.0)
+        XCTAssertEqual(early.progressRatio, 25.0 / 240.0, accuracy: 0.01)
+    }
 }

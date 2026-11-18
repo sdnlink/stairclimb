@@ -49,6 +49,15 @@ struct MarathonPlan: Equatable {
     let healthBasisNote: String
 }
 
+struct LiveRaceState: Equatable {
+    let elapsedSeconds: Double
+    let estimatedDistanceKm: Double
+    let progressRatio: Double
+    let currentSplit: MarathonSplit?
+    let nextFuelingCue: FuelingCue?
+    let secondsToNextCue: Double?
+}
+
 enum MarathonPacingEngine {
     /// Riegel race-time prediction: T2 = T1 * (D2 / D1)^1.06
     static func riegelPredictSeconds(
@@ -233,6 +242,41 @@ enum MarathonPacingEngine {
             splits: splits,
             fuelingCues: cues,
             healthBasisNote: basis
+        )
+    }
+
+    static func liveState(elapsedSeconds: Double, plan: MarathonPlan) -> LiveRaceState {
+        let elapsed = max(0.0, elapsedSeconds)
+        let totalKm = plan.splits.last?.distanceKm ?? 0.0
+
+        var prevTime = 0.0
+        var prevKm = 0.0
+        var activeSplit = plan.splits.last
+        var estKm = totalKm
+
+        for split in plan.splits {
+            if elapsed <= split.cumulativeSeconds {
+                activeSplit = split
+                let segDuration = max(1.0, split.cumulativeSeconds - prevTime)
+                let segFraction = (elapsed - prevTime) / segDuration
+                estKm = prevKm + (split.distanceKm - prevKm) * segFraction
+                break
+            }
+            prevTime = split.cumulativeSeconds
+            prevKm = split.distanceKm
+        }
+
+        let nextCue = plan.fuelingCues.first { Double($0.minuteMark * 60) > elapsed }
+        let countdown = nextCue.map { max(0.0, Double($0.minuteMark * 60) - elapsed) }
+        let ratio = plan.targetTotalSeconds > 0 ? min(1.0, elapsed / plan.targetTotalSeconds) : 0.0
+
+        return LiveRaceState(
+            elapsedSeconds: elapsed,
+            estimatedDistanceKm: max(0.0, min(totalKm, estKm)),
+            progressRatio: ratio,
+            currentSplit: activeSplit,
+            nextFuelingCue: nextCue,
+            secondsToNextCue: countdown
         )
     }
 
