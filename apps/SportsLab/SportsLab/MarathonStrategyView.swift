@@ -31,6 +31,7 @@ struct MarathonStrategyView: View {
     @State private var timeMultiplier: Double = 1.0
     @State private var takenCueMarks: Set<Int> = []
     @State private var lastAlertedCueMark: Int? = nil
+    @State private var lastMatCheckIn: (label: String, deltaSeconds: Double, projectedFinish: Double)? = nil
 
     private let raceTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
@@ -84,6 +85,7 @@ struct MarathonStrategyView: View {
                             liveRaceHeroRingCard
                             liveRaceControlsCard
                             liveSplitHudCard
+                            liveMatCalibrationCard
                             liveFuelingCueSection
                         case .fuelingKit:
                             packingKitGrid
@@ -304,6 +306,36 @@ struct MarathonStrategyView: View {
                                 .padding(.vertical, 7)
                                 .background(active ? Color.cyan : Color.white.opacity(0.07), in: Capsule())
                         }
+                    }
+                }
+            }
+
+            goalPresetsStrip
+        }
+    }
+
+    private var goalPresetsStrip: some View {
+        let presets: [(label: String, minutes: Double)] = distance == .full
+            ? [("破3 · 3:00", 180), ("3:30", 210), ("破4 · 4:00", 240), ("4:30", 270)]
+            : [("1:35", 95), ("1:45", 105), ("破2 · 2:00", 120), ("2:15", 135)]
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Text("目标预设")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+                ForEach(presets, id: \.label) { item in
+                    let active = Int(targetMinutes.rounded()) == Int(item.minutes)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            targetMinutes = item.minutes
+                        }
+                    } label: {
+                        Text(item.label)
+                            .font(.caption2.monospacedDigit().weight(.bold))
+                            .foregroundStyle(active ? .black : .white.opacity(0.8))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(active ? Color.mint : Color.white.opacity(0.08), in: Capsule())
                     }
                 }
             }
@@ -672,6 +704,63 @@ struct MarathonStrategyView: View {
         }
     }
 
+    private var liveMatCalibrationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("计时毯路牌校准", systemImage: "flag.checkered")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("经过整5K点按校准")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(plan.splits) { split in
+                        Button {
+                            let delta = raceElapsedSeconds - split.cumulativeSeconds
+                            let ratio = raceElapsedSeconds > 0 ? (raceElapsedSeconds / max(1.0, split.cumulativeSeconds)) : 1.0
+                            let projected = plan.targetTotalSeconds * ratio
+                            lastMatCheckIn = (
+                                label: "\(Int(split.distanceKm.rounded()))K 路牌",
+                                deltaSeconds: delta,
+                                projectedFinish: projected
+                            )
+                        } label: {
+                            Text("过 \(String(format: "%.0f", split.distanceKm))K")
+                                .font(.caption2.monospacedDigit().weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.1), in: Capsule())
+                        }
+                    }
+                }
+            }
+
+            if let check = lastMatCheckIn {
+                let ahead = check.deltaSeconds <= 0
+                let absSec = Int(abs(check.deltaSeconds).rounded())
+                let deltaText = String(format: "%@%02d:%02d", ahead ? "领先 -" : "落后 +", absSec / 60, absSec % 60)
+                HStack {
+                    Text("\(check.label)：\(deltaText)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(ahead ? .mint : .orange)
+                    Spacer()
+                    Text("按当前均速预计 \(MarathonPacingEngine.formatDuration(check.projectedFinish))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.cyan)
+                }
+                .padding(10)
+                .background((ahead ? Color.mint : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
     private var liveFuelingCueSection: some View {
         let currentMinutes = Int(raceElapsedSeconds / 60.0)
         return VStack(alignment: .leading, spacing: 10) {
@@ -897,6 +986,7 @@ struct MarathonStrategyView: View {
         raceElapsedSeconds = 0
         takenCueMarks = []
         lastAlertedCueMark = nil
+        lastMatCheckIn = nil
     }
 
     private func checkFuelingHapticAlert() {

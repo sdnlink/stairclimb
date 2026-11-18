@@ -282,25 +282,25 @@ struct SportsHubView: View {
             HStack(spacing: 10) {
                 TelemetryPillCard(
                     title: "静息心率",
-                    value: health.snapshot.restingHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "54",
+                    value: health.snapshot.restingHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "--",
                     unit: "bpm",
                     accent: .pink
                 )
                 TelemetryPillCard(
                     title: "最近心率",
-                    value: health.snapshot.latestHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "132",
+                    value: health.snapshot.latestHeartRateBPM.map { "\(Int($0.rounded()))" } ?? "--",
                     unit: "bpm",
                     accent: .orange
                 )
                 TelemetryPillCard(
                     title: "VO2Max",
-                    value: health.snapshot.vo2Max.map { String(format: "%.1f", $0) } ?? "51.4",
+                    value: health.snapshot.vo2Max.map { String(format: "%.1f", $0) } ?? "--",
                     unit: "mL/kg",
                     accent: .cyan
                 )
                 TelemetryPillCard(
                     title: "近期配速",
-                    value: health.snapshot.recentRunPaceSecondsPerKm.map { MarathonPacingEngine.formatPace($0) } ?? "4'58\"",
+                    value: health.snapshot.recentRunPaceSecondsPerKm.map { MarathonPacingEngine.formatPace($0) } ?? "--",
                     unit: "/km",
                     accent: .mint
                 )
