@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 50
     env:
       IPA_MODE: ${{ inputs.signing || 'development' }}
