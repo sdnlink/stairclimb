@@ -123,6 +123,7 @@ struct SportsHubView: View {
             .tag(SportsLabTab.climbing)
         }
         .tint(.cyan)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .preferredColorScheme(.dark)
         .onAppear {
             if !hasSeededDemo && golf.records.isEmpty && tennis.shots.isEmpty && climbing.entries.isEmpty {
@@ -144,6 +145,7 @@ struct SportsHubView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
+                        athleteHeaderBanner
                         readinessHeroCard
                         biometricTelemetryStrip
                         capabilityRadarCard
@@ -171,6 +173,31 @@ struct SportsHubView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var athleteHeaderBanner: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("今日训练遥测")
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .foregroundStyle(.white)
+                Text(Date().formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            Spacer()
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(health.snapshot.authorized ? Color.mint : Color.orange)
+                    .frame(width: 6, height: 6)
+                Text(health.snapshot.authorized ? "HealthKit 在线" : "待连接健康")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.08), in: Capsule())
         }
     }
 
@@ -727,18 +754,32 @@ private struct SportBentoCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [accent.opacity(0.14), Color.white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [accent.opacity(0.16), Color.white.opacity(0.045)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(accent.opacity(0.28), lineWidth: 1)
-                )
+                Image(systemName: icon)
+                    .font(.system(size: 52, weight: .bold))
+                    .foregroundStyle(accent.opacity(0.08))
+                    .offset(x: -8, y: -6)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [accent.opacity(0.45), accent.opacity(0.14), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
         )
     }
 }

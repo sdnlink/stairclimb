@@ -151,12 +151,16 @@ struct MarathonStrategyView: View {
                     .background(
                         selected
                             ? AnyShapeStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing))
-                            : AnyShapeStyle(Color.white.opacity(0.07)),
+                            : AnyShapeStyle(Color.clear),
                         in: Capsule()
                     )
+                    .shadow(color: selected ? .orange.opacity(0.35) : .clear, radius: 6, y: 2)
                 }
             }
         }
+        .padding(4)
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
     }
 
     // MARK: - Mode 1: Strategy
@@ -203,18 +207,32 @@ struct MarathonStrategyView: View {
         }
         .padding(18)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.orange.opacity(0.18), Color.white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.20), Color.white.opacity(0.045)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.orange.opacity(0.32), lineWidth: 1)
-                )
+                Image(systemName: "figure.run")
+                    .font(.system(size: 74, weight: .bold))
+                    .foregroundStyle(Color.orange.opacity(0.07))
+                    .offset(x: -10, y: -4)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.45), Color.white.opacity(0.12), Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
         )
     }
 
