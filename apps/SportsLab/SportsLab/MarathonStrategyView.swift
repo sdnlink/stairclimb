@@ -54,16 +54,7 @@ struct MarathonStrategyView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.03, green: 0.05, blue: 0.09),
-                    Color(red: 0.07, green: 0.08, blue: 0.14),
-                    Color(red: 0.03, green: 0.05, blue: 0.09)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AmbientLabBackground(accent: .orange)
 
             VStack(spacing: 12) {
                 modeSegmentedBar
@@ -89,6 +80,7 @@ struct MarathonStrategyView: View {
                             liveFuelingCueSection
                         case .fuelingKit:
                             packingKitGrid
+                            paceBandPreviewCard
                             hrZonesSpectrumCard
                             fuelingTimelineCard
                             preRaceChecklistCard
@@ -580,9 +572,11 @@ struct MarathonStrategyView: View {
 
         return VStack(spacing: 16) {
             ZStack {
+                DialTickRing(tickCount: 36, radius: 112, tickLength: 5)
+
                 Circle()
                     .stroke(Color.white.opacity(0.08), lineWidth: 14)
-                    .frame(width: 200, height: 200)
+                    .frame(width: 196, height: 196)
 
                 Circle()
                     .trim(from: 0, to: state.progressRatio)
@@ -591,7 +585,7 @@ struct MarathonStrategyView: View {
                         style: StrokeStyle(lineWidth: 14, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .frame(width: 200, height: 200)
+                    .frame(width: 196, height: 196)
                     .shadow(color: .orange.opacity(0.45), radius: 10)
                     .animation(.easeOut(duration: 0.35), value: state.progressRatio)
 
@@ -607,6 +601,28 @@ struct MarathonStrategyView: View {
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.cyan)
                 }
+            }
+
+            VStack(spacing: 4) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.08))
+                        Capsule()
+                            .fill(LinearGradient(colors: [.orange, .mint], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(8, geo.size.width * state.progressRatio))
+                    }
+                }
+                .frame(height: 6)
+                HStack {
+                    Text("起点 0K")
+                    Spacer()
+                    Text("\(Int((state.progressRatio * 100).rounded()))% 赛程")
+                        .foregroundStyle(.mint)
+                    Spacer()
+                    Text(String(format: "终点 %.1fK", distance.kilometers))
+                }
+                .font(.system(size: 10, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.55))
             }
 
             HStack {
@@ -821,6 +837,64 @@ struct MarathonStrategyView: View {
             PackingTile(title: "预计补水", value: "\(plan.totalWaterMl)", unit: "mL", accent: .cyan, icon: "drop.fill")
             PackingTile(title: "电解质钠", value: "\(plan.totalSodiumMg)", unit: "mg", accent: .purple, icon: "bolt.fill")
         }
+    }
+
+    private var paceBandPreviewCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("比赛日配速腕带卡", systemImage: "rectangle.and.paperclip")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(distance == .full ? "42.2K 腕带" : "21.1K 腕带")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.orange, in: Capsule())
+            }
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("赛段")
+                        .frame(width: 66, alignment: .leading)
+                    Text("目标配速")
+                    Spacer()
+                    Text("过线时间")
+                        .frame(width: 64, alignment: .trailing)
+                }
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.orange)
+
+                ForEach(Array(plan.splits.enumerated()), id: \.element.id) { idx, split in
+                    HStack {
+                        Text(split.segmentLabel)
+                            .fontWeight(.semibold)
+                            .frame(width: 66, alignment: .leading)
+                        Text("\(MarathonPacingEngine.formatPace(split.paceSecondsPerKm))/km")
+                            .foregroundStyle(.cyan)
+                        Spacer()
+                        Text(MarathonPacingEngine.formatDuration(split.cumulativeSeconds))
+                            .frame(width: 64, alignment: .trailing)
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(idx.isMultiple(of: 2) ? Color.white.opacity(0.05) : Color.clear)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .padding(16)
+        .glassLabCard(accent: .orange)
     }
 
     private var hrZonesSpectrumCard: some View {
@@ -1087,23 +1161,51 @@ private struct RaceCourseSplitCanvas: View {
             let paces = splits.map(\.paceSecondsPerKm)
             let minPace = (paces.min() ?? 240) - 12
             let maxPace = max(minPace + 10, (paces.max() ?? 360) + 8)
+            let avgPace = paces.reduce(0, +) / Double(paces.count)
             let count = splits.count
             let slotWidth = size.width / CGFloat(count)
-            let barWidth = max(12, slotWidth * 0.56)
+            let barWidth = max(12, slotWidth * 0.52)
 
+            let avgNorm = (avgPace - minPace) / (maxPace - minPace)
+            let avgY = size.height - max(16, CGFloat(0.28 + 0.65 * avgNorm) * (size.height - 18)) - 6
+            var avgLine = Path()
+            avgLine.move(to: CGPoint(x: 6, y: avgY))
+            avgLine.addLine(to: CGPoint(x: size.width - 6, y: avgY))
+            context.stroke(avgLine, with: .color(.white.opacity(0.22)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+            var curvePoints: [CGPoint] = []
             for (idx, split) in splits.enumerated() {
                 let norm = (split.paceSecondsPerKm - minPace) / (maxPace - minPace)
-                let height = max(16, CGFloat(0.28 + 0.65 * norm) * (size.height - 14))
+                let height = max(16, CGFloat(0.28 + 0.65 * norm) * (size.height - 18))
                 let x = CGFloat(idx) * slotWidth + (slotWidth - barWidth) / 2
                 let y = size.height - height - 6
                 let rect = CGRect(x: x, y: y, width: barWidth, height: height)
                 let barColor: Color = split.zoneLabel.contains("Z4")
                     ? .orange
                     : (split.zoneLabel.contains("Z3") ? .cyan : .mint)
-                let opacity: Double = idx == selectedIndex ? 1.0 : 0.48
+                let opacity: Double = idx == selectedIndex ? 0.92 : 0.34
                 context.fill(
                     Path(roundedRect: rect, cornerRadius: 5),
                     with: .color(barColor.opacity(opacity))
+                )
+                curvePoints.append(CGPoint(x: x + barWidth / 2, y: y))
+            }
+
+            if curvePoints.count >= 2 {
+                var curve = Path()
+                curve.move(to: curvePoints[0])
+                for pt in curvePoints.dropFirst() {
+                    curve.addLine(to: pt)
+                }
+                context.stroke(curve, with: .color(.white.opacity(0.75)), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            }
+
+            for (idx, pt) in curvePoints.enumerated() {
+                let isSel = idx == selectedIndex
+                let r: CGFloat = isSel ? 5 : 3
+                context.fill(
+                    Path(ellipseIn: CGRect(x: pt.x - r, y: pt.y - r, width: r * 2, height: r * 2)),
+                    with: .color(isSel ? .orange : .white)
                 )
             }
         }

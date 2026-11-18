@@ -9,16 +9,7 @@ struct TennisStatsView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.03, green: 0.05, blue: 0.09),
-                    Color(red: 0.05, green: 0.10, blue: 0.13),
-                    Color(red: 0.03, green: 0.05, blue: 0.09)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AmbientLabBackground(accent: .green)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {

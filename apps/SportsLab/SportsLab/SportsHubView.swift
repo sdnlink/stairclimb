@@ -140,16 +140,7 @@ struct SportsHubView: View {
     private var hubDashboardTab: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.03, green: 0.05, blue: 0.09),
-                        Color(red: 0.06, green: 0.09, blue: 0.16),
-                        Color(red: 0.03, green: 0.05, blue: 0.09)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                AmbientLabBackground(accent: .cyan)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
@@ -186,6 +177,7 @@ struct SportsHubView: View {
     private var readinessHeroCard: some View {
         HStack(spacing: 18) {
             ZStack {
+                DialTickRing(tickCount: 24, radius: 55, tickLength: 4)
                 Circle()
                     .stroke(Color.white.opacity(0.08), lineWidth: 10)
                     .frame(width: 98, height: 98)
@@ -748,5 +740,89 @@ private struct SportBentoCard: View {
                         .stroke(accent.opacity(0.28), lineWidth: 1)
                 )
         )
+    }
+}
+
+struct AmbientLabBackground: View {
+    let accent: Color
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.025, green: 0.04, blue: 0.08),
+                    Color(red: 0.05, green: 0.07, blue: 0.13),
+                    Color(red: 0.02, green: 0.035, blue: 0.07)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            GeometryReader { geo in
+                Circle()
+                    .fill(accent.opacity(0.16))
+                    .frame(width: 280, height: 280)
+                    .blur(radius: 90)
+                    .offset(x: -60, y: -40)
+
+                Circle()
+                    .fill(Color.indigo.opacity(0.16))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 95)
+                    .offset(x: geo.size.width * 0.45, y: geo.size.height * 0.42)
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+struct DialTickRing: View {
+    let tickCount: Int
+    let radius: CGFloat
+    let tickLength: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            for i in 0..<tickCount {
+                let angle = (Double(i) / Double(tickCount)) * 2.0 * .pi - .pi / 2.0
+                let isMajor = i % (max(1, tickCount / 4)) == 0
+                let len = isMajor ? tickLength + 2.5 : tickLength
+                let inner = radius - len
+                let p1 = CGPoint(x: center.x + CGFloat(cos(angle)) * inner, y: center.y + CGFloat(sin(angle)) * inner)
+                let p2 = CGPoint(x: center.x + CGFloat(cos(angle)) * radius, y: center.y + CGFloat(sin(angle)) * radius)
+                var path = Path()
+                path.move(to: p1)
+                path.addLine(to: p2)
+                context.stroke(
+                    path,
+                    with: .color(.white.opacity(isMajor ? 0.35 : 0.14)),
+                    lineWidth: isMajor ? 1.5 : 1.0
+                )
+            }
+        }
+        .frame(width: radius * 2 + 8, height: radius * 2 + 8)
+    }
+}
+
+extension View {
+    func glassLabCard(accent: Color = .white, cornerRadius: CGFloat = 20) -> some View {
+        self
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.055))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [accent.opacity(0.42), Color.white.opacity(0.12), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+            )
     }
 }
