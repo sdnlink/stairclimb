@@ -74,6 +74,12 @@ final class SportsLabTests: XCTestCase {
         store.checkIn(gymOrCrag: "香蕉攀岩", routeName: "黑线 #1", style: .bouldering, grade: "V6", outcome: .attempt, notes: "")
         XCTAssertEqual(store.summary.completedCount, 1)
         XCTAssertEqual(store.summary.highestBouldering, "V4")
+
+        if let project = store.entries.first(where: { !$0.outcome.isCompleted }) {
+            store.markRedpoint(project.id)
+        }
+        XCTAssertEqual(store.summary.completedCount, 2)
+        XCTAssertEqual(store.summary.highestBouldering, "V6")
     }
 
     func testMarathonPlanWithHealth() {

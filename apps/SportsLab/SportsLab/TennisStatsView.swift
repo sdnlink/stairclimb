@@ -1,11 +1,26 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct TennisStatsView: View {
     @ObservedObject var tracker: TennisShotTracker
     @ObservedObject var health: HealthKitService
     @State private var selectedKind: TennisShotKind = .forehand
+    @State private var filterKind: TennisShotKind? = nil
     @State private var showHeatmap = true
+
+    // Live Match Scoreboard state
+    @State private var mySets = 0
+    @State private var oppSets = 0
+    @State private var myGames = 0
+    @State private var oppGames = 0
+    @State private var myPoints = 0
+    @State private var oppPoints = 0
+
+    private var displayedShots: [TennisShotRecord] {
+        guard let filter = filterKind else { return tracker.shots }
+        return tracker.shots.filter { $0.kind == filter }
+    }
 
     var body: some View {
         ZStack {
@@ -13,6 +28,7 @@ struct TennisStatsView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
+                    liveScoreboardCard
                     shotKindPillBar
                     courtRadarCard
                     telemetryGrid
@@ -43,6 +59,110 @@ struct TennisStatsView: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private var liveScoreboardCard: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label("实时比赛计分板", systemImage: "sportscourt.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Button("重置比分") {
+                    mySets = 0; oppSets = 0; myGames = 0; oppGames = 0; myPoints = 0; oppPoints = 0
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            }
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("选手")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("我方 (ME)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.green)
+                    Text("对手 (OPP)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                Spacer()
+                scoreColumn(title: "盘 SET", top: "\(mySets)", bottom: "\(oppSets)", highlight: .white)
+                scoreColumn(title: "局 GAME", top: "\(myGames)", bottom: "\(oppGames)", highlight: .cyan)
+                scoreColumn(title: "分 PT", top: formattedPoint(my: myPoints, opp: oppPoints), bottom: formattedPoint(my: oppPoints, opp: myPoints), highlight: .green)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    awardPoint(toMe: true)
+                } label: {
+                    Text("+ 我方得分 (Winner/Ace)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing), in: Capsule())
+                }
+                Button {
+                    awardPoint(toMe: false)
+                } label: {
+                    Text("+ 对手得分")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(Color.white.opacity(0.12), in: Capsule())
+                }
+            }
+        }
+        .padding(14)
+        .glassLabCard(accent: .green, cornerRadius: 20)
+    }
+
+    private func scoreColumn(title: String, top: String, bottom: String, highlight: Color) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(top)
+                .font(.system(.title3, design: .rounded).weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(highlight)
+                .frame(minWidth: 34)
+            Text(bottom)
+                .font(.system(.title3, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(minWidth: 34)
+        }
+    }
+
+    private func formattedPoint(my: Int, opp: Int) -> String {
+        if my >= 3 && opp >= 3 {
+            if my == opp { return "40" }
+            return my > opp ? "AD" : "40"
+        }
+        let table = ["0", "15", "30", "40"]
+        return table[min(my, 3)]
+    }
+
+    private func awardPoint(toMe: Bool) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if toMe { myPoints += 1 } else { oppPoints += 1 }
+        if myPoints >= 4 && myPoints - oppPoints >= 2 {
+            myGames += 1
+            myPoints = 0; oppPoints = 0
+            if myGames >= 6 && myGames - oppGames >= 2 {
+                mySets += 1; myGames = 0; oppGames = 0
+            }
+        } else if oppPoints >= 4 && oppPoints - myPoints >= 2 {
+            oppGames += 1
+            myPoints = 0; oppPoints = 0
+            if oppGames >= 6 && oppGames - myGames >= 2 {
+                oppSets += 1; myGames = 0; oppGames = 0
+            }
+        }
     }
 
     private var shotKindPillBar: some View {
@@ -126,10 +246,42 @@ struct TennisStatsView: View {
                 }
             }
 
-            TennisCourtCanvas(shots: tracker.shots, showHeatmap: showHeatmap) { x, y in
+            TennisCourtCanvas(shots: displayedShots, showHeatmap: showHeatmap) { x, y in
                 tracker.addShot(kind: selectedKind, x: x, y: y)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
             .frame(height: 250)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Text("落点筛选")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Button {
+                        filterKind = nil
+                    } label: {
+                        Text("全部(\(tracker.shots.count))")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(filterKind == nil ? .black : .white.opacity(0.75))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(filterKind == nil ? Color.cyan : Color.white.opacity(0.08), in: Capsule())
+                    }
+                    ForEach(TennisShotKind.allCases) { kind in
+                        let active = filterKind == kind
+                        Button {
+                            filterKind = active ? nil : kind
+                        } label: {
+                            Text(kind.rawValue)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(active ? .black : .white.opacity(0.75))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(active ? Color.cyan : Color.white.opacity(0.08), in: Capsule())
+                        }
+                    }
+                }
+            }
 
             HStack(spacing: 14) {
                 Label("界内", systemImage: "circle.fill").foregroundStyle(.green)

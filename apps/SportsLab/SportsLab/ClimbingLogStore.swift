@@ -61,6 +61,22 @@ final class ClimbingLogStore: ObservableObject {
         save()
     }
 
+    func markRedpoint(_ id: UUID) {
+        guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
+        let old = entries[idx]
+        entries[idx] = ClimbingRouteCheckIn(
+            id: old.id,
+            date: Date(),
+            gymOrCrag: old.gymOrCrag,
+            routeName: old.routeName,
+            style: old.style,
+            grade: old.grade,
+            outcome: .redpoint,
+            notes: old.notes
+        )
+        save()
+    }
+
     var summary: ClimbingSummary { Self.summarize(entries) }
 
     static func summarize(_ entries: [ClimbingRouteCheckIn]) -> ClimbingSummary {

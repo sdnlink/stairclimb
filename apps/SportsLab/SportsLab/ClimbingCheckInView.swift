@@ -1,4 +1,6 @@
+import Combine
 import SwiftUI
+import UIKit
 
 @MainActor
 struct ClimbingCheckInView: View {
@@ -13,6 +15,12 @@ struct ClimbingCheckInView: View {
     @State private var notes = ""
     @State private var showCheckInForm = true
 
+    // Hangboard / Rest Interval Timer
+    @State private var timerTotalSeconds = 150
+    @State private var timerRemainingSeconds = 150
+    @State private var isTimerRunning = false
+    private let restTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
     private var availableGrades: [String] {
         style == .bouldering ? ClimbingLogStore.boulderingGrades : ClimbingLogStore.leadGrades
     }
@@ -24,6 +32,8 @@ struct ClimbingCheckInView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     heroSummaryCard
+                    climbingTimerCard
+                    activeProjectsCard
                     if !store.entries.isEmpty {
                         gradeBreakdownCard
                         gymStatsCard
@@ -52,6 +62,118 @@ struct ClimbingCheckInView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onReceive(restTimer) { _ in
+            guard isTimerRunning else { return }
+            if timerRemainingSeconds > 0 {
+                timerRemainingSeconds -= 1
+                if timerRemainingSeconds == 0 {
+                    isTimerRunning = false
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                }
+            }
+        }
+    }
+
+    private var climbingTimerCard: some View {
+        let presets: [(label: String, sec: Int)] = [
+            ("指力板 7s", 7),
+            ("组间歇 2:30", 150),
+            ("先锋歇 4:00", 240)
+        ]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("指力板 / 组间休息倒计时", systemImage: "timer")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(String(format: "%02d:%02d", timerRemainingSeconds / 60, timerRemainingSeconds % 60))
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(isTimerRunning ? .mint : .purple)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(presets, id: \.label) { p in
+                    let active = timerTotalSeconds == p.sec
+                    Button {
+                        isTimerRunning = false
+                        timerTotalSeconds = p.sec
+                        timerRemainingSeconds = p.sec
+                    } label: {
+                        Text(p.label)
+                            .font(.caption2.monospacedDigit().weight(.bold))
+                            .foregroundStyle(active ? .black : .white.opacity(0.75))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(active ? Color.purple : Color.white.opacity(0.08), in: Capsule())
+                    }
+                }
+                Spacer()
+                Button {
+                    if timerRemainingSeconds == 0 { timerRemainingSeconds = timerTotalSeconds }
+                    isTimerRunning.toggle()
+                } label: {
+                    Image(systemName: isTimerRunning ? "pause.fill" : "play.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(isTimerRunning ? Color.orange : Color.mint, in: Capsule())
+                }
+            }
+        }
+        .padding(14)
+        .glassLabCard(accent: .purple, cornerRadius: 18)
+    }
+
+    private var activeProjectsCard: some View {
+        let projects = store.entries.filter { !$0.outcome.isCompleted }
+        return Group {
+            if !projects.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("正在攻坚路线 (Projects)", systemImage: "flame.fill")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Text("\(projects.count) 条待红点")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+
+                    ForEach(projects) { proj in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(proj.grade) · \(proj.routeName)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Text(proj.gymOrCrag)
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                            Spacer()
+                            Button {
+                                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    store.markRedpoint(proj.id)
+                                }
+                            } label: {
+                                Text("红点完攀 ✓")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.mint, in: Capsule())
+                            }
+                        }
+                        .padding(10)
+                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .padding(14)
+                .glassLabCard(accent: .orange, cornerRadius: 18)
+            }
+        }
     }
 
     private var heroSummaryCard: some View {

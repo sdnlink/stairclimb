@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 struct GolfSwingView: View {
     @ObservedObject var analyzer: GolfSwingAnalyzer
@@ -50,12 +51,22 @@ struct GolfSwingView: View {
         .navigationTitle("挥杆雷达实验室")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: swingShareReport) {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(.cyan)
+                }
+            }
+        }
         .preferredColorScheme(.dark)
         .onReceive(replayTimer) { _ in
             if isMetronomeActive {
                 metronomeTick += 1
                 if metronomeTick % 10 == 0 {
                     metronomeBeat = (metronomeBeat + 1) % 4
+                    let style: UIImpactFeedbackGenerator.FeedbackStyle = metronomeBeat == 3 ? .heavy : .light
+                    UIImpactFeedbackGenerator(style: style).impactOccurred()
                 }
             }
             guard isReplaying else { return }
@@ -67,6 +78,21 @@ struct GolfSwingView: View {
                 isReplaying = false
             }
         }
+    }
+
+    private var swingShareReport: String {
+        guard let latest = analyzer.records.first else {
+            return "SportsLab 高尔夫挥杆雷达：暂未采集记录"
+        }
+        let carryYds = Int((latest.estimatedClubSpeedMph * 2.15).rounded())
+        return """
+        SportsLab 高尔夫挥杆遥测战报
+        球杆：\(latest.club) · 一致性 \(latest.consistencyScore)分
+        杆头速度：\(latest.estimatedClubSpeedMph) mph（估算落点 ~\(carryYds) yds）
+        挥杆节奏：\(String(format: "%.2f", latest.tempoRatio)):1（上杆 \(latest.backswingMs)ms / 下杆 \(latest.downswingMs)ms）
+        平面倾向：\(latest.pathTendency)（\(String(format: "%+.1f°", latest.planeDeviationDegrees))）
+        动作建议：\(GolfSwingAnalyzer.coachingAdvice(tempoRatio: latest.tempoRatio, planeDeviationDegrees: latest.planeDeviationDegrees))
+        """
     }
 
     private var clubPillBar: some View {
