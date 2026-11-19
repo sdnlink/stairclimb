@@ -18,18 +18,20 @@ struct SportsHubView: View {
     @State private var selectedTab: SportsLabTab = .hub
     @AppStorage("sportslab.demo.seeded.v1") private var hasSeededDemo = false
     @AppStorage("sportslab.demo.active.v1") private var isDemoModeActive = false
+    @AppStorage("sportslab.daily.sleep.v1") private var sleepRating = 4
+    @AppStorage("sportslab.daily.recovery.v1") private var muscleRecoveryRating = 4
     @State private var showPrivacySheet = false
 
     private var readinessScore: Int {
-        var score = 76
-        if health.snapshot.authorized { score += 6 }
+        var score = 68 + (sleepRating - 3) * 4 + (muscleRecoveryRating - 3) * 4
+        if health.snapshot.authorized { score += 5 }
         if let vo2 = health.snapshot.vo2Max {
-            score += min(12, max(-6, Int(((vo2 - 42.0) * 0.8).rounded())))
+            score += min(10, max(-6, Int(((vo2 - 42.0) * 0.8).rounded())))
         }
         if let rhr = health.snapshot.restingHeartRateBPM {
             score += min(8, max(-8, Int(((62.0 - rhr) * 0.6).rounded())))
         }
-        return max(45, min(99, score))
+        return max(35, min(99, score))
     }
 
     private var marathonPreviewDuration: String {
@@ -158,6 +160,7 @@ struct SportsHubView: View {
                         }
                         readinessHeroCard
                         biometricTelemetryStrip
+                        dailyCheckInCard
                         capabilityRadarCard
                         moduleBentoGrid
                         weeklyLoadCard
@@ -346,6 +349,68 @@ struct SportsHubView: View {
         }
     }
 
+    private var dailyCheckInCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("今日体感校准（实时联动准备度）", systemImage: "slider.horizontal.2.square")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                ShareLink(item: hubShareReport) {
+                    Label("分享战报", systemImage: "square.and.arrow.up")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.cyan)
+                }
+            }
+
+            ratingRow(title: "睡眠质量", value: $sleepRating, accent: .cyan)
+            ratingRow(title: "肌肉恢复", value: $muscleRecoveryRating, accent: .mint)
+        }
+        .padding(14)
+        .glassLabCard(accent: .cyan, cornerRadius: 18)
+    }
+
+    private func ratingRow(title: String, value: Binding<Int>, accent: Color) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 52, alignment: .leading)
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { level in
+                    let active = level <= value.wrappedValue
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            value.wrappedValue = level
+                        }
+                    } label: {
+                        Text("\(level)")
+                            .font(.caption2.monospacedDigit().weight(.bold))
+                            .foregroundStyle(active ? .black : .white.opacity(0.6))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                            .background(active ? accent : Color.white.opacity(0.08), in: Capsule())
+                    }
+                }
+            }
+        }
+    }
+
+    private var hubShareReport: String {
+        let golfText = golf.records.first.map { "\($0.club) \($0.estimatedClubSpeedMph)mph (\($0.consistencyScore)分)" } ?? "暂无"
+        let tennisText = tennis.summary.totalShots > 0 ? "\(tennis.summary.totalShots)拍 · 界内率 \(Int((tennis.summary.inBoundsRate * 100).rounded()))%" : "暂无"
+        let climbText = climbing.summary.highestBouldering ?? climbing.summary.highestLead ?? "暂无"
+        return """
+        SportsLab 今日跨项目遥测战报
+        竞技准备度：\(readinessScore) 分（睡眠 \(sleepRating)/5 · 肌肉恢复 \(muscleRecoveryRating)/5）
+        高尔夫：\(golfText)
+        马拉松预测：全马 \(marathonPreviewDuration)
+        网球：\(tennisText)
+        攀岩最高完攀：\(climbText)
+        今日处方：\(dailyPrescription)
+        """
+    }
+
     private var capabilityRadarCard: some View {
         let scores = capabilityScores
         return HStack(spacing: 16) {
@@ -393,7 +458,7 @@ struct SportsHubView: View {
                     SportBentoCard(
                         title: "高尔夫挥杆",
                         subtitle: "球道弹道 · 残影对比",
-                        metric: golf.records.first.map { "\($0.consistencyScore)分" } ?? "92分",
+                        metric: golf.records.first.map { "\($0.consistencyScore)分" } ?? "--",
                         detail: golf.records.first.map { "\($0.estimatedClubSpeedMph) mph · \($0.club)" } ?? "100Hz 实时分析",
                         icon: "figure.golf",
                         accent: .cyan
@@ -437,7 +502,7 @@ struct SportsHubView: View {
                     SportBentoCard(
                         title: "攀岩打卡",
                         subtitle: "难度金字塔 · 岩馆榜",
-                        metric: climbing.summary.highestBouldering ?? climbing.summary.highestLead ?? "V5",
+                        metric: climbing.summary.highestBouldering ?? climbing.summary.highestLead ?? "--",
                         detail: "完攀 \(climbing.summary.completedCount)/\(climbing.summary.totalCheckIns) 条",
                         icon: "figure.climbing",
                         accent: .purple
