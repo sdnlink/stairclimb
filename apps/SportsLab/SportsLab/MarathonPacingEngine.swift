@@ -1,13 +1,13 @@
 import Foundation
 
-enum MarathonDistance: String, CaseIterable, Identifiable {
+enum MarathonDistance: String, Codable, CaseIterable, Identifiable {
     case half = "半程马拉松 (21.1 km)"
     case full = "全程马拉松 (42.2 km)"
     var id: String { rawValue }
     var kilometers: Double { self == .half ? 21.0975 : 42.195 }
 }
 
-enum PacingStrategyMode: String, CaseIterable, Identifiable {
+enum PacingStrategyMode: String, Codable, CaseIterable, Identifiable {
     case even = "匀速巡航 (Even Split)"
     case negativeSplit = "后程加速 (Negative Split)"
     case conservativeStart = "稳健起步防掉速"
@@ -288,5 +288,83 @@ enum MarathonPacingEngine {
     static func formatDuration(_ seconds: Double) -> String {
         let total = max(0, Int(seconds.rounded()))
         return String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+    }
+}
+
+struct SavedMarathonPlan: Codable, Identifiable, Equatable {
+    let id: UUID
+    let raceName: String
+    let savedAt: Date
+    let distance: MarathonDistance
+    let strategy: PacingStrategyMode
+    let targetMinutes: Int
+    let elevationGainMeters: Double
+    let bodyWeightKg: Double
+    let temperatureCelsius: Double
+    let runnerAge: Int
+}
+
+@MainActor
+final class MarathonPlanStore: ObservableObject {
+    @Published private(set) var savedPlans: [SavedMarathonPlan] = []
+
+    private let defaults: UserDefaults
+    private let storageKey = "sportslab.marathon.savedPlans.v1"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
+
+    func savePlan(
+        raceName: String,
+        distance: MarathonDistance,
+        strategy: PacingStrategyMode,
+        targetMinutes: Int,
+        elevationGainMeters: Double,
+        bodyWeightKg: Double,
+        temperatureCelsius: Double,
+        runnerAge: Int
+    ) {
+        let trimmed = raceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmed.isEmpty ? (distance == .full ? "全马赛事方案" : "半马赛事方案") : trimmed
+        let item = SavedMarathonPlan(
+            id: UUID(),
+            raceName: title,
+            savedAt: Date(),
+            distance: distance,
+            strategy: strategy,
+            targetMinutes: targetMinutes,
+            elevationGainMeters: elevationGainMeters,
+            bodyWeightKg: bodyWeightKg,
+            temperatureCelsius: temperatureCelsius,
+            runnerAge: runnerAge
+        )
+        savedPlans.insert(item, at: 0)
+        persist()
+    }
+
+    func delete(_ id: UUID) {
+        savedPlans.removeAll { $0.id == id }
+        persist()
+    }
+
+    func clearAll() {
+        savedPlans.removeAll()
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(savedPlans) {
+            defaults.set(data, forKey: storageKey)
+        }
+    }
+
+    private func load() {
+        guard let data = defaults.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode([SavedMarathonPlan].self, from: data) else {
+            return
+        }
+        savedPlans = decoded
     }
 }

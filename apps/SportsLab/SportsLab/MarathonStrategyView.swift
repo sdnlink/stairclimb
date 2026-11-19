@@ -32,6 +32,8 @@ struct MarathonStrategyView: View {
     @State private var takenCueMarks: Set<Int> = []
     @State private var lastAlertedCueMark: Int? = nil
     @State private var lastMatCheckIn: (label: String, deltaSeconds: Double, projectedFinish: Double)? = nil
+    @StateObject private var planStore = MarathonPlanStore()
+    @State private var raceNameInput = ""
 
     private let raceTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
@@ -72,6 +74,8 @@ struct MarathonStrategyView: View {
                             splitTableCard
                             healthRiegelStrip
                             courseTunerDrawer
+                            savedPlansCard
+                            fitnessDisclaimerNote
                         case .liveRace:
                             liveRaceHeroRingCard
                             liveRaceControlsCard
@@ -577,6 +581,93 @@ struct MarathonStrategyView: View {
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
         )
+    }
+
+    private var savedPlansCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("我的赛事方案档案", systemImage: "bookmark.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("\(planStore.savedPlans.count) 个方案")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.cyan)
+            }
+
+            HStack(spacing: 8) {
+                TextField("输入赛事名称（如：上海全马 330）", text: $raceNameInput)
+                    .font(.caption)
+                    .padding(10)
+                    .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button {
+                    planStore.savePlan(
+                        raceName: raceNameInput,
+                        distance: distance,
+                        strategy: strategy,
+                        targetMinutes: Int(targetMinutes.rounded()),
+                        elevationGainMeters: elevationGainMeters,
+                        bodyWeightKg: bodyWeightKg,
+                        temperatureCelsius: temperatureCelsius,
+                        runnerAge: runnerAge
+                    )
+                    raceNameInput = ""
+                } label: {
+                    Text("保存方案")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+
+            if !planStore.savedPlans.isEmpty {
+                ForEach(planStore.savedPlans) { saved in
+                    HStack {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                distance = saved.distance
+                                strategy = saved.strategy
+                                targetMinutes = Double(saved.targetMinutes)
+                                elevationGainMeters = saved.elevationGainMeters
+                                bodyWeightKg = saved.bodyWeightKg
+                                temperatureCelsius = saved.temperatureCelsius
+                                runnerAge = saved.runnerAge
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(saved.raceName)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Text("\(saved.distance == .full ? "全马" : "半马") · \(saved.targetMinutes) 分钟 · \(saved.strategy.rawValue)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            planStore.delete(saved.id)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+        }
+        .padding(14)
+        .glassLabCard(accent: .cyan, cornerRadius: 18)
+    }
+
+    private var fitnessDisclaimerNote: some View {
+        Text("免责声明：配速、储备心率区间、补给与撞墙风险评估仅供一般运动训练参考，不构成医疗诊断或治疗建议。参赛前请结合自身健康状况并遵循专业医疗意见。")
+            .font(.caption2)
+            .foregroundStyle(.white.opacity(0.48))
+            .padding(.horizontal, 4)
     }
 
     // MARK: - Mode 2: Live Race Cockpit

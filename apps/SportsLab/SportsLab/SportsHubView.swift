@@ -17,6 +17,8 @@ struct SportsHubView: View {
 
     @State private var selectedTab: SportsLabTab = .hub
     @AppStorage("sportslab.demo.seeded.v1") private var hasSeededDemo = false
+    @AppStorage("sportslab.demo.active.v1") private var isDemoModeActive = false
+    @State private var showPrivacySheet = false
 
     private var readinessScore: Int {
         var score = 76
@@ -129,12 +131,17 @@ struct SportsHubView: View {
             if !hasSeededDemo && golf.records.isEmpty && tennis.shots.isEmpty && climbing.entries.isEmpty {
                 seedAllDemoData()
                 hasSeededDemo = true
+                isDemoModeActive = true
             }
         }
-        .task {
-            if !health.snapshot.authorized && health.isAvailable {
-                await health.refresh()
-            }
+        .sheet(isPresented: $showPrivacySheet) {
+            PrivacyAndHealthSheet(
+                onClearAll: clearAllLocalData,
+                onReseedDemo: {
+                    seedAllDemoData()
+                    isDemoModeActive = true
+                }
+            )
         }
     }
 
@@ -146,6 +153,9 @@ struct SportsHubView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         athleteHeaderBanner
+                        if isDemoModeActive {
+                            demoBanner
+                        }
                         readinessHeroCard
                         biometricTelemetryStrip
                         capabilityRadarCard
@@ -163,11 +173,20 @@ struct SportsHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showPrivacySheet = true
+                    } label: {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(.mint)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         seedAllDemoData()
+                        isDemoModeActive = true
                     } label: {
-                        Label("补充示例", systemImage: "sparkles")
+                        Label("体验示例", systemImage: "sparkles")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.cyan)
                     }
@@ -523,18 +542,55 @@ struct SportsHubView: View {
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private var privacyFooter: some View {
+    private var demoBanner: some View {
         HStack(spacing: 8) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(.mint)
-            Text("所有 Apple 健康与传感器数据仅在本机处理与存储，绝不上传至任何服务器。")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.6))
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(.cyan)
+            Text("当前展示内置体验示例数据")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            Button("清空示例") {
+                clearAllLocalData()
+            }
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.cyan, in: Capsule())
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.vertical, 8)
+        .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var privacyFooter: some View {
+        Button {
+            showPrivacySheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(.mint)
+                Text("本地处理 · 非医疗诊断建议 · 点击查看隐私与数据管理")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.65))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    private func clearAllLocalData() {
+        for rec in golf.records { golf.deleteRecord(rec) }
+        tennis.clearAll()
+        for entry in climbing.entries { climbing.remove(entry.id) }
+        isDemoModeActive = false
     }
 
     private func seedAllDemoData() {
@@ -865,5 +921,49 @@ extension View {
                             )
                     )
             )
+    }
+}
+
+private struct PrivacyAndHealthSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onClearAll: () -> Void
+    let onReseedDemo: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Apple 健康 (HealthKit) 读取范围") {
+                    Text("仅在您主动点击「同步 Apple 健康」并授权后，在设备本地读取心率、静息心率、最大摄氧量 (VO2Max) 及跑步/高尔夫/网球/攀岩训练记录。")
+                        .font(.caption)
+                    Text("所有健康与传感器数据均仅在本机计算与存储，绝不上传至任何外部服务器，也不用于广告或跨应用追踪。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("健康与运动免责声明") {
+                    Text("本应用提供的竞技准备度、Karvonen 心率区间、马拉松配速/补给策略、撞墙风险评估与挥杆分析仅供日常运动训练参考，不构成任何医疗诊断、预防或治疗建议。请结合自身身体状况量力而行，必要时咨询专业医生。")
+                        .font(.caption)
+                }
+
+                Section("本地数据管理") {
+                    Button("重新载入体验示例数据") {
+                        onReseedDemo()
+                        dismiss()
+                    }
+                    Button("清空全部本地训练记录", role: .destructive) {
+                        onClearAll()
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("隐私与健康声明")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }

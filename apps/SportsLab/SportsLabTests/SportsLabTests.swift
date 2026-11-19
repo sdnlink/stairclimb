@@ -146,4 +146,28 @@ final class SportsLabTests: XCTestCase {
         XCTAssertLessThan(early.estimatedDistanceKm, 6.0)
         XCTAssertEqual(early.progressRatio, 25.0 / 240.0, accuracy: 0.01)
     }
+
+    func testSavedMarathonPlanPersistence() {
+        let suite = UserDefaults(suiteName: "SportsLabTests.MarathonPlans.\(UUID().uuidString)")!
+        let store = MarathonPlanStore(defaults: suite)
+        store.savePlan(
+            raceName: "上海全马破330",
+            distance: .full,
+            strategy: .negativeSplit,
+            targetMinutes: 210,
+            elevationGainMeters: 160,
+            bodyWeightKg: 68,
+            temperatureCelsius: 20,
+            runnerAge: 32
+        )
+        XCTAssertEqual(store.savedPlans.count, 1)
+        XCTAssertEqual(store.savedPlans.first?.raceName, "上海全马破330")
+
+        let reloaded = MarathonPlanStore(defaults: suite)
+        XCTAssertEqual(reloaded.savedPlans.count, 1)
+        XCTAssertEqual(reloaded.savedPlans.first?.targetMinutes, 210)
+
+        reloaded.delete(reloaded.savedPlans[0].id)
+        XCTAssertTrue(reloaded.savedPlans.isEmpty)
+    }
 }
